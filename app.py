@@ -6,6 +6,7 @@ import requests
 import json
 import google.generativeai as genai
 import gc
+import os
 from itertools import dropwhile
 
 app = Flask(__name__)
@@ -80,6 +81,10 @@ def fetch_tw_whale(ticker):
         df_mf_reset = df_mf.tail(BARS).reset_index()
         df_mf_reset['date'] = df_mf_reset['date'].dt.strftime('%Y-%m-%d')
         json_records = df_mf_reset.to_dict(orient='records')
+
+        del df_mf, df_mf_reset
+        gc.collect()
+        
         return json_records
     else:
       return {}
@@ -151,6 +156,8 @@ def fetch_stock_data(ticker):
         "puts": opt.puts.to_dict(orient="records")
     }
 
+  gc.collect()
+  
   return {
     "history": hist_dict,
     "financials": financials,
@@ -171,6 +178,8 @@ def fetch_stock_data(ticker):
 ################################################################################################################################################################
 @app.route('/analysis/', methods=['GET', 'POST'])
 def gemini_analysis():
+  gc.collect()
+  
   analysis = None
   error = None
   ticker = ''
