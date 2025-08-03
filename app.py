@@ -17,7 +17,7 @@ cm_url = os.environ.get('CM_URL')
 
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel('gemini-2.5-pro')   
-BARS = 100
+BARS = 60
 
 
 
@@ -81,7 +81,7 @@ def fetch_tw_whale(ticker):
         df_mf_reset = df_mf.tail(BARS).reset_index()
         df_mf_reset['date'] = df_mf_reset['date'].dt.strftime('%Y-%m-%d')
         json_records = df_mf_reset.to_dict(orient='records')
-        print(json_records)
+        #print(json_records)
         del df_mf, df_mf_reset
         gc.collect()
         
@@ -196,9 +196,9 @@ def gemini_analysis():
         stock_data = fetch_stock_data(ticker)
         prompt_prefix = f'請根據{ticker}的歷史股價與技術分析（含10MA, 20MA, 60MA, 200MA, RSI, ATR, Volume, MACD Histogram, Bollinger Band, 200MA Diff Z-Score, Dividends）配合對應的成交量 (Volume)，財報 (financials, quarterly_financials, cash_flow, quarterly_cashflow, info)，與期權資料，{additional_prompt}，列出近期財報亮點與分析師評論 (upgrades_downgrades, eps_trend, revenue_estimate) 的整理，且產生一份繁體中文個股分析報告，首先列出目前價格與關鍵支持價位，然後內容包含基本面 (數字要有YoY加減速的分析，以及free cashflow的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏)、技術面 (配合成交量分析, 例如是否有價量背離) 與期權市場的觀察與建議。'
         prompt = f'{prompt_prefix}\n資料如下：\n{stock_data}'
-        print('----------------------------------------')
-        print(prompt)
-        print('----------------------------------------')
+        #print('----------------------------------------')
+        #print(prompt)
+        #print('----------------------------------------')
         model = genai.GenerativeModel(model_name)
         response = model.generate_content(prompt)
         analysis = response.text
