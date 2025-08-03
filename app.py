@@ -81,7 +81,7 @@ def fetch_tw_whale(ticker):
         df_mf_reset = df_mf.tail(BARS).reset_index()
         df_mf_reset['date'] = df_mf_reset['date'].dt.strftime('%Y-%m-%d')
         json_records = df_mf_reset.to_dict(orient='records')
-
+        print(json_records)
         del df_mf, df_mf_reset
         gc.collect()
         
