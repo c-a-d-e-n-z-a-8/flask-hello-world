@@ -1,2 +1,6 @@
 Flask
+ta-lib-everywhere
+pandas
+yfinance
+google-generativeai
 Gunicorn
