@@ -51,7 +51,7 @@ def fetch_tw_whale(ticker):
     }
 
     ck = ''
-    r = requests.get(f'{cm_url}?action=mf&id=2330', headers=headers)
+    r = requests.get(f'{cm_url}?action=mf&id=2330', headers=headers, verify=False)
     if r.status_code == 200:
       idx_b = r.text.index('var ck = "') + 10
       if idx_b > 0:
@@ -63,7 +63,7 @@ def fetch_tw_whale(ticker):
 
     if ck != '':
       params['id'] = ticker[:ticker.index('.')]
-      r = requests.get(cm_url, params=params, headers=headers)
+      r = requests.get(cm_url, params=params, headers=headers, verify=False)
       if r.status_code == 200:
         cm_data = r.json()
         records = [
