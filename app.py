@@ -21,7 +21,7 @@ cm_url = os.environ.get('CM_URL')
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
 
-BARS = 20
+BARS = 40
 
 
 
@@ -68,7 +68,7 @@ def fetch_tw_whale(ticker):
     
     if ck != '':
       params['id'] = ticker[:ticker.index('.')]
-      r = requests.get('https://www.cmoney.tw/notice/chart/stock-chart-service.ashx', params=params, headers=headers,verify=False)
+      r = requests.get('https://www.cmoney.tw/notice/chart/stock-chart-service.ashx', params=params, headers=headers, verify=False)
       if r.status_code == 200:
         cm_data = r.json()
         records = [
@@ -153,11 +153,11 @@ def fetch_stock_data(ticker):
 
   hist['10MA'] = talib.SMA(hist[close], timeperiod=10)
   hist['20MA'] = talib.SMA(hist[close], timeperiod=20)
-  hist['60MA'] = talib.SMA(hist[close], timeperiod=60)
+  #hist['60MA'] = talib.SMA(hist[close], timeperiod=60)
   hist['200MA'] = talib.SMA(hist[close], timeperiod=200)  
-  hist['Bollinger Band Upper'], hist['60MA'], hist['Bollinger Band Lower'] = talib.BBANDS(hist[close].values, timeperiod=60, nbdevup=2, nbdevdn=2, matype=MA_TYPE)    
+  hist['BBU'], hist['60MA'], hist['BBD'] = talib.BBANDS(hist[close].values, timeperiod=60, nbdevup=2, nbdevdn=2, matype=MA_TYPE)    
   hist['RSI'] = talib.RSI(hist[close], timeperiod=14)
-  hist['MACD'], hist['MACD Signal'], hist['MACD Hist'] = talib.MACD(hist[close], fastperiod=50, slowperiod=120, signalperiod=30)
+  hist['MACD'], hist['MACD Signal'], hist['MACDH'] = talib.MACD(hist[close], fastperiod=50, slowperiod=120, signalperiod=30)
   
   hist.drop(['MACD', 'MACD Signal'], axis=1, inplace=True)
   gc.collect()
@@ -170,7 +170,7 @@ def fetch_stock_data(ticker):
   std_diff = hist['200MA Diff'].std()
 
   # Calculate the z-score
-  hist['200MA Diff Z-Score'] = (hist['200MA Diff'] - mean_diff) / std_diff
+  hist['200MADZ'] = (hist['200MA Diff'] - mean_diff) / std_diff
   
   hist.drop(['200MA Diff'], axis=1, inplace=True)
   gc.collect()
@@ -197,8 +197,8 @@ def fetch_stock_data(ticker):
   for date in options:
     opt = stock.option_chain(date)
     options_data[date] = {
-        "calls": opt.calls.to_dict(orient="records"),
-        "puts": opt.puts.to_dict(orient="records")
+      "calls": opt.calls.to_dict(orient="records"),
+      "puts": opt.puts.to_dict(orient="records")
     }
 
   gc.collect()
@@ -300,7 +300,7 @@ def gemini_analysis():
     else:
       try:
         stock_data = fetch_stock_data(ticker)
-        prompt_prefix = f'請根據{ticker}的歷史股價與技術分析（含10MA, 20MA, 60MA, 200MA, RSI, ATR, Volume, MACD Histogram, Bollinger Band, 200MA Diff Z-Score）配合對應的成交量 (Volume)，財報 (financials, quarterly_financials, cash_flow, quarterly_cashflow, info)，與期權資料，{additional_prompt}，列出近期財報亮點與分析師評論 (upgrades_downgrades, eps_trend, revenue_estimate) 的整理，且產生一份繁體中文個股分析報告，首先列出目前價格與關鍵支持價位以及根據財報預測數據所推算的未來股價，然後內容包含基本面 (數字要有YoY加減速的分析，以及free cashflow的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏, 並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析, 例如是否有價量背離) 與期權市場的觀察與建議。 若資料中有台灣股市 (mainforce_tw) 主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃貨或出貨狀況。若資料中有short_stats，根據 sF (short floating) 與 sR (short ratio) 分析市場空單狀況及嘎空可能性。'
+        prompt_prefix = f'請根據{ticker}的歷史股價與技術分析（含10MA, 20MA, 60MA, 200MA, RSI, ATR, Volume, MACD Histogram (MACDH), 60MA Bollinger Band (BBU, BBD), 200MA Diff Z-Score (200MADZ)）配合對應的成交量 (Volume)，財報 (financials, quarterly_financials, cash_flow, quarterly_cashflow, info)，與期權資料，{additional_prompt}，列出近期財報亮點與分析師評論 (upgrades_downgrades, eps_trend, revenue_estimate) 的整理，且產生一份繁體中文個股分析報告，首先列出目前價格與關鍵支持價位以及根據財報預測數據所推算的未來股價，然後內容包含基本面 (數字要有YoY加減速的分析，以及free cashflow的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析, 例如是否有價量背離) 與期權市場的觀察與建議。 若資料中有台灣股市 (mainforce_tw) 主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中有short_stats，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。'
         prompt = f'{prompt_prefix}\n資料如下：\n{stock_data}'
         #print('----------------------------------------')
         #print(prompt)
