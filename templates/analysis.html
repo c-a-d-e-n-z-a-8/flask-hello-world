@@ -55,7 +55,7 @@
 </head>
 <body class="bg-dark">
 
-<div class="container py-5">
+<div class="container-fluid py-5">
     <div class="row">
         <div class="col-md-8 offset-md-2">
 
@@ -90,6 +90,24 @@
             {% endif %}
 
             {% if analysis %}
+                 <!-- Stock Chart -->
+                <br>
+                <div class="text-center mb-4">
+                    {% if ".TW" in ticker %}
+                        <img 
+                            src="https://stock.wearn.com/finance_chart.asp?stockid={{ ticker.replace('.TWO', '').replace('.TW', '') }}&timeblock=365&sma1=10&sma2=20&sma3=60&volume=1" 
+                            alt="台股走勢圖" 
+                            class="img-fluid rounded border"
+                        >
+                    {% else %}
+                        <img 
+                            src="https://charts2.finviz.com/chart.ashx?t={{ ticker }}&ta=1&ty=c&p=d&s=l" 
+                            alt="美股走勢圖" 
+                            class="img-fluid rounded border"
+                        >
+                    {% endif %}
+                </div>
+                <!-- Analysis Card -->
                 <div class="card mt-5 shadow">
                     <div class="card-header bg-success text-white">
                         📊 Analysis Result
