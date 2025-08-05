@@ -18,7 +18,7 @@ cm_url = os.environ.get('CM_URL')
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
 
-BARS = 200
+BARS = 60
 
 
 
