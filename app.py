@@ -18,7 +18,7 @@ cm_url = os.environ.get('CM_URL')
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
 
-BARS = 60
+BARS = 200
 
 
 
@@ -64,7 +64,7 @@ def fetch_tw_whale(ticker):
 
     if ck != '':
       params['id'] = ticker[:ticker.index('.')]
-      r = requests.get(cm_url, params=params, headers=headers, verify=False, timeout=60)
+      r = requests.get('https://www.cmoney.tw/notice/chart/stock-chart-service.ashx', params=params, headers=headers, verify=False, timeout=60)
       if r.status_code == 200:
         print(r.text)
         cm_data = r.json()
