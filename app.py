@@ -16,7 +16,11 @@ api_key = os.environ.get('API_KEY')
 cm_url = os.environ.get('CM_URL')
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-2.5-pro')   
+model = genai.GenerativeModel('gemini-2.5-pro')
+
+use_ollama = False
+ollama_model = "deepseek-r1:8b"
+
 BARS = 60
 
 
@@ -175,6 +179,27 @@ def fetch_stock_data(ticker):
 
 
 ################################################################################################################################################################
+def ollama_generate(prompt, model='llama3'):
+  print(f"Use Ollama: {model}")
+ 
+  url = 'http://localhost:11434/api/generate'
+  payload = {
+    "model": model,
+    "prompt": prompt,
+    "stream": False
+  }
+  try:
+    response = requests.post(url, json=payload, timeout=2400)
+    response.raise_for_status()
+    data = response.json()
+    return data.get('response', '')
+  except Exception as e:
+    return f"Ollama 呼叫失敗: {e}"
+
+
+
+
+################################################################################################################################################################
 @app.route('/analysis/', methods=['GET', 'POST'])
 def gemini_analysis():
   gc.collect()
@@ -194,14 +219,17 @@ def gemini_analysis():
     else:
       try:
         stock_data = fetch_stock_data(ticker)
-        prompt_prefix = f'請根據{ticker}的歷史股價與技術分析（含10MA, 20MA, 60MA, 200MA, RSI, ATR, Volume, MACD Histogram, Bollinger Band, 200MA Diff Z-Score, Dividends）配合對應的成交量 (Volume)，財報 (financials, quarterly_financials, cash_flow, quarterly_cashflow, info)，與期權資料，{additional_prompt}，列出近期財報亮點與分析師評論 (upgrades_downgrades, eps_trend, revenue_estimate) 的整理，且產生一份繁體中文個股分析報告，首先列出目前價格與關鍵支持價位，然後內容包含基本面 (數字要有YoY加減速的分析，以及free cashflow的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏)、技術面 (配合成交量分析, 例如是否有價量背離) 與期權市場的觀察與建議。'
+        prompt_prefix = f'請根據{ticker}的歷史股價與技術分析（含10MA, 20MA, 60MA, 200MA, RSI, ATR, Volume, MACD Histogram, Bollinger Band, 200MA Diff Z-Score, Dividends）配合對應的成交量 (Volume)，財報 (financials, quarterly_financials, cash_flow, quarterly_cashflow, info)，與期權資料，{additional_prompt}，列出近期財報亮點與分析師評論 (upgrades_downgrades, eps_trend, revenue_estimate) 的整理，且產生一份繁體中文個股分析報告，首先列出目前價格與關鍵支持價位，然後內容包含基本面 (數字要有YoY加減速的分析，以及free cashflow的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏)、技術面 (配合成交量分析, 例如是否有價量背離) 與期權市場的觀察與建議。 若資料中有台灣股市 (mainforce_tw) 主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃貨或出貨狀況。'
         prompt = f'{prompt_prefix}\n資料如下：\n{stock_data}'
         #print('----------------------------------------')
         #print(prompt)
         #print('----------------------------------------')
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt)
-        analysis = response.text
+        if use_ollama == True:
+          analysis = ollama_generate(prompt, model=ollama_model)
+        else:
+          model = genai.GenerativeModel(model_name)
+          response = model.generate_content(prompt)
+          analysis = response.text
       except Exception as e:
         error = f"分析過程發生錯誤: {e}"
 
