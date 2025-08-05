@@ -183,20 +183,31 @@ def fetch_stock_data(ticker):
 ################################################################################################################################################################
 def ollama_generate(prompt, model='llama3'):
   print(f"Use Ollama: {model}")
- 
-  url = 'http://localhost:11434/api/generate'
-  payload = {
-    "model": model,
-    "prompt": prompt,
-    "stream": False
+  
+  headers = {
+    "Content-Type": "application/json"
   }
-  try:
-    response = requests.post(url, json=payload, timeout=2400)
-    response.raise_for_status()
-    data = response.json()
-    return data.get('response', '')
-  except Exception as e:
-    return f"Ollama 呼叫失敗: {e}"
+
+  data = {
+    "model": model,  # 請確認這個模型已經在本地 ollama 中存在
+    "messages": [
+      {
+        "role": "user",
+        "content": prompt
+      }
+    ],
+    "stream": False  # 若設為 True，會變成 stream 回傳
+  }
+ 
+  url = "http://localhost:11434/api/chat"
+  response = requests.post(url, headers=headers, data=json.dumps(data), timeout=600)
+  
+  if response.status_code == 200:
+    result = response.json()
+    return(result["message"]["content"])
+  else:
+    print(f"❌ Ollama error：{response.status_code}")
+    print(response.text)
 
 
 
@@ -223,7 +234,7 @@ def gemini_generate_content(prompt, model_name, api_key):
       # 取出回應內容
       return result['candidates'][0]['content']['parts'][0]['text']
     else:
-      raise Exception(f"Gemini API error: {response.status_code} {response.text}")
+      raise Exception(f"❌ Gemini API error: {response.status_code} {response.text}")
 
 
 
