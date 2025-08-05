@@ -33,7 +33,7 @@ def fetch_tw_whale(ticker):
       'Accept': 'application/json, text/javascript, */*; q=0.01',
       'Accept-Language': 'en-US,en;q=0.9',
       'Connection': 'keep-alive',
-      'Referer': f'{cm_url}?action=mf&id=6446',
+      'Referer': f'{cm_url}?action=mf&id={ticker}',
       'Sec-Fetch-Dest': 'empty',
       'Sec-Fetch-Mode': 'cors',
       'Sec-Fetch-Site': 'same-origin',
