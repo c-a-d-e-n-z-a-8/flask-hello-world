@@ -145,7 +145,7 @@ def fetch_stock_data(ticker):
   MA_TYPE = 0
   
   stock = yf.Ticker(ticker)
-  hist = stock.history(period="2y", auto_adjust=True)        
+  hist = stock.history(period="1y", auto_adjust=True)        
   hist['ATR'] = talib.ATR(hist['High'], hist['Low'], hist['Close'], timeperiod=5)
   
   hist.drop(['Open', 'High', 'Low', 'Stock Splits'], axis=1, inplace=True)
