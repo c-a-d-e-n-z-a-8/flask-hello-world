@@ -271,22 +271,47 @@ def gemini_analysis():
 
 
 ################################################################################################################################################################
+################################################################################################################################################################
+def rewrite_html(html, base_url):
+  # 將 src/href 內的絕對或相對路徑改寫成 proxy 路徑
+  def repl(match):
+    orig_url = match.group(2)
+    # 處理相對路徑
+    if not orig_url.startswith('http'):
+        from urllib.parse import urljoin
+        orig_url = urljoin(base_url, orig_url)
+    return f'{match.group(1)}/proxy?url={orig_url}{match.group(3)}'
+
+  # 只處理 src 和 href
+  pattern = r'((?:src|href)=["\'])([^"\']+)(["\'])'
+  return re.sub(pattern, repl, html, flags=re.IGNORECASE)
+
+
+
+
+################################################################################################################################################################
 @app.route('/proxy')
 def proxy():
-  target_url = request.args.get('url')
-  if not target_url:
-    return "請提供 ?url= 參數", 400
+    target_url = request.args.get('url')
+    if not target_url:
+        return "請提供 ?url= 參數", 400
 
-  try:
-    # 轉發 GET 請求
-    resp = requests.get(target_url, headers={
-        'User-Agent': request.headers.get('User-Agent', 'Mozilla/5.0')
-    }, timeout=10)
+    try:
+        resp = requests.get(target_url, headers={
+            'User-Agent': request.headers.get('User-Agent', 'Mozilla/5.0')
+        }, timeout=10)
+        content_type = resp.headers.get('Content-Type', '')
 
-    # 回傳原始內容與 Content-Type
-    return Response(resp.content, status=resp.status_code, content_type=resp.headers.get('Content-Type'))
-  except Exception as e:
-    return f"Error: {e}", 500
+        if 'text/html' in content_type:
+            # 只重寫 HTML
+            html = resp.text
+            html = rewrite_html(html, target_url)
+            return Response(html, status=resp.status_code, content_type=content_type)
+        else:
+            # 其他資源直接回傳
+            return Response(resp.content, status=resp.status_code, content_type=content_type)
+    except Exception as e:
+        return f"Error: {e}", 500
 
 
 
