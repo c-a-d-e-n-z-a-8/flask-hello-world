@@ -66,9 +66,9 @@ def fetch_tw_whale(ticker):
       params['id'] = ticker[:ticker.index('.')]
       r = requests.get('https://www.cmoney.tw/notice/chart/stock-chart-service.ashx', params=params, headers=headers, verify=False, timeout=60)
       if r.status_code == 200:
-        print(r.text)
         cm_data = r.json()
-        print(cm_data)
+        #print(cm_data)
+        
         records = [
           {
             "date": pd.to_datetime(c[0], unit='ms'),
@@ -84,7 +84,8 @@ def fetch_tw_whale(ticker):
         df_mf_reset = df_mf.tail(BARS).reset_index()
         df_mf_reset['date'] = df_mf_reset['date'].dt.strftime('%Y-%m-%d')
         json_records = df_mf_reset.to_dict(orient='records')
-        print(json_records)
+        #print(json_records)
+        
         del df_mf, df_mf_reset
         gc.collect()
         
