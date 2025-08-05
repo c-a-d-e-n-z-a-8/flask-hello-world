@@ -66,6 +66,7 @@ def fetch_tw_whale(ticker):
       params['id'] = ticker[:ticker.index('.')]
       r = requests.get(cm_url, params=params, headers=headers, verify=False, timeout=60)
       if r.status_code == 200:
+        print(r.text)
         cm_data = r.json()
         print(cm_data)
         records = [
@@ -222,6 +223,7 @@ def gemini_generate_content(prompt, model_name, api_key):
       return result['candidates'][0]['content']['parts'][0]['text']
     else:
       raise Exception(f"Gemini API error: {response.status_code} {response.text}")
+
 
 
 
