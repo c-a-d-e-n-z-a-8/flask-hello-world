@@ -17,6 +17,9 @@ app = Flask(__name__)
 # Initialization
 api_key = os.environ.get('API_KEY')
 cm_url = os.environ.get('CM_URL')
+cm_url2 = os.environ.get('CM_URL2')
+si_url = os.environ.get('SI_URL')
+
 
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
@@ -68,7 +71,7 @@ def fetch_tw_whale(ticker):
     
     if ck != '':
       params['id'] = ticker[:ticker.index('.')]
-      r = requests.get('https://www.cmoney.tw/notice/chart/stock-chart-service.ashx', params=params, headers=headers, verify=False)
+      r = requests.get(cm_url2, params=params, headers=headers, verify=False)
       if r.status_code == 200:
         cm_data = r.json()
         records = [
@@ -98,7 +101,7 @@ def fetch_short_stats(ticker):
   return_value = {}
   
   if ".TW" not in ticker:
-    headers_benzinga = {
+    headers_si = {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
       'Accept-Language': 'zh-TW,zh-CN;q=0.9,zh;q=0.8,en-US;q=0.7,en;q=0.6',
       'Cache-Control': 'max-age=0',
@@ -115,7 +118,7 @@ def fetch_short_stats(ticker):
       'sec-ch-ua-platform': '"Windows"',
     }
       
-    r = requests.get(f'https://www.benzinga.com/quote/{ticker}/short-interest', headers=headers_benzinga, verify=False)
+    r = requests.get(f'{si_url}/quote/{ticker}/short-interest', headers=headers_si, verify=False)
     if r.status_code == 200:
       html = r.text
       idx_b = html.find('"shortInterest":[{')
