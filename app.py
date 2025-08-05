@@ -67,6 +67,7 @@ def fetch_tw_whale(ticker):
       r = requests.get(cm_url, params=params, headers=headers, verify=False, timeout=60)
       if r.status_code == 200:
         cm_data = r.json()
+        print(cm_data)
         records = [
           {
             "date": pd.to_datetime(c[0], unit='ms'),
@@ -170,8 +171,8 @@ def fetch_stock_data(ticker):
     "eps_trend": eps_trend,
     "revenue_estimate": revenue_estimate,
     "options": options_data,
-    #"mainforce_tw": fetch_tw_whale(ticker)
-    "mainforce_tw": {}
+    "mainforce_tw": fetch_tw_whale(ticker)
+    #"mainforce_tw": {}
   }
 
 
