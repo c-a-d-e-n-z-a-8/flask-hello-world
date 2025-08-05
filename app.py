@@ -21,7 +21,7 @@ cm_url = os.environ.get('CM_URL')
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
 
-BARS = 40
+BARS = 200
 
 
 
@@ -145,7 +145,7 @@ def fetch_stock_data(ticker):
   MA_TYPE = 0
   
   stock = yf.Ticker(ticker)
-  hist = stock.history(period="1y", auto_adjust=True)        
+  hist = stock.history(period="2y", auto_adjust=True)        
   hist['ATR'] = talib.ATR(hist['High'], hist['Low'], hist['Close'], timeperiod=5)
   
   hist.drop(['Open', 'High', 'Low', 'Stock Splits'], axis=1, inplace=True)
@@ -175,7 +175,9 @@ def fetch_stock_data(ticker):
   hist.drop(['200MA Diff'], axis=1, inplace=True)
   gc.collect()
   
+  hist = hist.round(2)
   hist = hist.reset_index().tail(BARS)
+  hist['Date'] = pd.to_datetime(hist['Date']).dt.strftime('%Y-%m-%d')
   
   #print(hist)
   
@@ -197,8 +199,8 @@ def fetch_stock_data(ticker):
   for date in options:
     opt = stock.option_chain(date)
     options_data[date] = {
-      "calls": opt.calls.to_dict(orient="records"),
-      "puts": opt.puts.to_dict(orient="records")
+      "calls": opt.calls.round(4).to_dict(orient="records"),
+      "puts": opt.puts.round(4).to_dict(orient="records")
     }
 
   gc.collect()
