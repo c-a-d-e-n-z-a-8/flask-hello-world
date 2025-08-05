@@ -170,7 +170,8 @@ def fetch_stock_data(ticker):
     "eps_trend": eps_trend,
     "revenue_estimate": revenue_estimate,
     "options": options_data,
-    "mainforce_tw": fetch_tw_whale(ticker)
+    #"mainforce_tw": fetch_tw_whale(ticker)
+    "mainforce_tw": {}
   }
 
 
