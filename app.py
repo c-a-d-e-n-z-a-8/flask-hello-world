@@ -7,7 +7,10 @@ import json
 import gc
 import os
 from itertools import dropwhile
-import requests
+from io import StringIO
+
+
+
 
 app = Flask(__name__)
 
