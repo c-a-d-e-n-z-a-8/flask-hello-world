@@ -64,7 +64,7 @@ def fetch_tw_whale(ticker):
 
     if ck != '':
       params['id'] = ticker[:ticker.index('.')]
-      r = requests.get(cm_url, params=params, headers=headers, verify=False)
+      r = requests.get(cm_url, params=params, headers=headers, verify=False, timeout=60)
       if r.status_code == 200:
         cm_data = r.json()
         records = [
@@ -214,7 +214,7 @@ def gemini_generate_content(prompt, model_name, api_key):
             }
         ]
     }
-    response = requests.post(url, headers=headers, json=data)
+    response = requests.post(url, headers=headers, json=data, timeout=600)
     if response.status_code == 200:
       result = response.json()
       # 取出回應內容
