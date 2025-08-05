@@ -4,7 +4,6 @@ import pandas as pd
 import talib
 import requests
 import json
-#import google.generativeai as genai
 import gc
 import os
 from itertools import dropwhile
@@ -15,8 +14,6 @@ app = Flask(__name__)
 # Initialization
 api_key = os.environ.get('API_KEY')
 cm_url = os.environ.get('CM_URL')
-
-genai.configure(api_key=api_key)
 
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
@@ -254,6 +251,8 @@ def gemini_analysis():
         if use_ollama == True:
           analysis = ollama_generate(prompt, model=ollama_model)
         else:
+          #import google.generativeai as genai
+          #genai.configure(api_key=api_key)
           #model = genai.GenerativeModel(model_name)
           #response = model.generate_content(prompt)
           #analysis = response.text
