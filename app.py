@@ -1,13 +1,14 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, Response
 import yfinance as yf
 import pandas as pd
 import talib
 import requests
 import json
-import google.generativeai as genai
+#import google.generativeai as genai
 import gc
 import os
 from itertools import dropwhile
+import requests
 
 app = Flask(__name__)
 
@@ -16,7 +17,6 @@ api_key = os.environ.get('API_KEY')
 cm_url = os.environ.get('CM_URL')
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-2.5-pro')
 
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
@@ -201,6 +201,32 @@ def ollama_generate(prompt, model='llama3'):
 
 
 ################################################################################################################################################################
+def gemini_generate_content(prompt, model_name, api_key):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key
+    }
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+      result = response.json()
+      # 取出回應內容
+      return result['candidates'][0]['content']['parts'][0]['text']
+    else:
+      raise Exception(f"Gemini API error: {response.status_code} {response.text}")
+
+
+
+################################################################################################################################################################
 @app.route('/analysis/', methods=['GET', 'POST'])
 def gemini_analysis():
   gc.collect()
@@ -228,9 +254,10 @@ def gemini_analysis():
         if use_ollama == True:
           analysis = ollama_generate(prompt, model=ollama_model)
         else:
-          model = genai.GenerativeModel(model_name)
-          response = model.generate_content(prompt)
-          analysis = response.text
+          #model = genai.GenerativeModel(model_name)
+          #response = model.generate_content(prompt)
+          #analysis = response.text
+          analysis = gemini_generate_content(prompt, model_name, api_key)
       except Exception as e:
         error = f"分析過程發生錯誤: {e}"
 
