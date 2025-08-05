@@ -36,7 +36,7 @@ def fetch_tw_whale(ticker):
       'Accept-Language': 'en-US,en;q=0.9',
       'Connection': 'keep-alive',
       # 'Cookie': '_ga=GA1.1.1864982060.1699273472; _ga_HZCJFFGP6T=GS1.1.1699273471.1.0.1699273471.60.0.0',
-      'Referer': 'https://www.cmoney.tw/notice/chart/stockchart.aspx?action=mf&id=6446',
+      'Referer': f'{cm_url}?action=mf&id={ticker}',
       'Sec-Fetch-Dest': 'empty',
       'Sec-Fetch-Mode': 'cors',
       'Sec-Fetch-Site': 'same-origin',
@@ -55,7 +55,7 @@ def fetch_tw_whale(ticker):
     }
 
     ck = ''
-    r = requests.get('https://www.cmoney.tw/notice/chart/stockchart.aspx?action=mf&id=2330', headers=headers)
+    r = requests.get(f'{cm_url}?action=mf&id=2330', headers=headers, verify=False)
     if r.status_code == 200:
       idx_b = r.text.index('var ck = "') + 10
       if idx_b > 0:
@@ -66,7 +66,7 @@ def fetch_tw_whale(ticker):
     
     if ck != '':
       params['id'] = ticker[:ticker.index('.')]
-      r = requests.get('https://www.cmoney.tw/notice/chart/stock-chart-service.ashx', params=params, headers=headers)
+      r = requests.get('https://www.cmoney.tw/notice/chart/stock-chart-service.ashx', params=params, headers=headers,verify=False)
       if r.status_code == 200:
         cm_data = r.json()
         records = [
