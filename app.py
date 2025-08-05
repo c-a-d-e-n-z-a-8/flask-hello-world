@@ -239,6 +239,27 @@ def gemini_analysis():
 
 
 ################################################################################################################################################################
+@app.route('/proxy')
+def proxy():
+  target_url = request.args.get('url')
+  if not target_url:
+    return "請提供 ?url= 參數", 400
+
+  try:
+    # 轉發 GET 請求
+    resp = requests.get(target_url, headers={
+        'User-Agent': request.headers.get('User-Agent', 'Mozilla/5.0')
+    }, timeout=10)
+
+    # 回傳原始內容與 Content-Type
+    return Response(resp.content, status=resp.status_code, content_type=resp.headers.get('Content-Type'))
+  except Exception as e:
+    return f"Error: {e}", 500
+
+
+
+
+################################################################################################################################################################
 ################################################################################################################################################################
 if __name__ == '__main__':
     app.run(debug=True)
