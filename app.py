@@ -35,7 +35,6 @@ def fetch_tw_whale(ticker):
       'Accept': 'application/json, text/javascript, */*; q=0.01',
       'Accept-Language': 'en-US,en;q=0.9',
       'Connection': 'keep-alive',
-      # 'Cookie': '_ga=GA1.1.1864982060.1699273472; _ga_HZCJFFGP6T=GS1.1.1699273471.1.0.1699273471.60.0.0',
       'Referer': f'{cm_url}?action=mf&id={ticker}',
       'Sec-Fetch-Dest': 'empty',
       'Sec-Fetch-Mode': 'cors',
