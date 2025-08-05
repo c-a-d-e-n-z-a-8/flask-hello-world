@@ -26,6 +26,8 @@ BARS = 20
 ################################################################################################################################################################
 def fetch_tw_whale(ticker):
   
+  return_value = {}
+  
   if ".TW" in ticker:
 
     # Get CMoney CK key first
@@ -33,7 +35,8 @@ def fetch_tw_whale(ticker):
       'Accept': 'application/json, text/javascript, */*; q=0.01',
       'Accept-Language': 'en-US,en;q=0.9',
       'Connection': 'keep-alive',
-      'Referer': f'{cm_url}?action=mf&id={ticker}',
+      # 'Cookie': '_ga=GA1.1.1864982060.1699273472; _ga_HZCJFFGP6T=GS1.1.1699273471.1.0.1699273471.60.0.0',
+      'Referer': 'https://www.cmoney.tw/notice/chart/stockchart.aspx?action=mf&id=6446',
       'Sec-Fetch-Dest': 'empty',
       'Sec-Fetch-Mode': 'cors',
       'Sec-Fetch-Site': 'same-origin',
@@ -52,7 +55,7 @@ def fetch_tw_whale(ticker):
     }
 
     ck = ''
-    r = requests.get(f'{cm_url}?action=mf&id=2330', headers=headers, verify=False)
+    r = requests.get('https://www.cmoney.tw/notice/chart/stockchart.aspx?action=mf&id=2330', headers=headers)
     if r.status_code == 200:
       idx_b = r.text.index('var ck = "') + 10
       if idx_b > 0:
@@ -61,14 +64,11 @@ def fetch_tw_whale(ticker):
         params['ck'] = ck
         print(f'CK: {ck}')
     
-
     if ck != '':
       params['id'] = ticker[:ticker.index('.')]
-      r = requests.get('https://www.cmoney.tw/notice/chart/stock-chart-service.ashx', params=params, headers=headers, verify=False, timeout=60)
+      r = requests.get('https://www.cmoney.tw/notice/chart/stock-chart-service.ashx', params=params, headers=headers)
       if r.status_code == 200:
         cm_data = r.json()
-        #print(cm_data)
-        
         records = [
           {
             "date": pd.to_datetime(c[0], unit='ms'),
@@ -83,18 +83,57 @@ def fetch_tw_whale(ticker):
 
         df_mf_reset = df_mf.tail(BARS).reset_index()
         df_mf_reset['date'] = df_mf_reset['date'].dt.strftime('%Y-%m-%d')
-        json_records = df_mf_reset.to_dict(orient='records')
-        #print(json_records)
-        
-        del df_mf, df_mf_reset
-        gc.collect()
-        
-        return json_records
-    else:
-      return {}
-  else:
-    return {}
-    
+        return_value = df_mf_reset.to_dict(orient='records')
+
+  return return_value
+
+
+
+
+################################################################################################################################################################
+def fetch_short_stats(ticker):
+  
+  return_value = {}
+  
+  if ".TW" not in ticker:
+    headers_benzinga = {
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'Accept-Language': 'zh-TW,zh-CN;q=0.9,zh;q=0.8,en-US;q=0.7,en;q=0.6',
+      'Cache-Control': 'max-age=0',
+      'Connection': 'keep-alive',
+      'Referer': 'https://www.google.com/',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'same-origin',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+    }
+      
+    r = requests.get(f'https://www.benzinga.com/quote/{ticker}/short-interest', headers=headers_benzinga, verify=False)
+    if r.status_code == 200:
+      html = r.text
+      idx_b = html.find('"shortInterest":[{')
+      if idx_b > -1:
+        idx_e = html.find('],', idx_b)
+        if idx_e > -1:
+          json_txt = '[' + html[idx_b+17:idx_e+1]
+          df = pd.read_json(StringIO(json_txt), orient='records')
+          df['recordDate'] = pd.to_datetime(df['recordDate']).dt.strftime('%Y-%m-%d')
+          rename_cols = {
+            'recordDate': 'Date',
+            'daysToCover': 'sR',
+            'shortPercentOfFloat': 'sF'
+          }
+          df = df.rename(columns=rename_cols)[rename_cols.values()].tail(20)
+
+          return_value = df.to_dict(orient='records')
+
+  return return_value
+
 
 
 
@@ -173,8 +212,8 @@ def fetch_stock_data(ticker):
     "eps_trend": eps_trend,
     "revenue_estimate": revenue_estimate,
     "options": options_data,
-    "mainforce_tw": fetch_tw_whale(ticker)
-    #"mainforce_tw": {}
+    "mainforce_tw": fetch_tw_whale(ticker),
+    "short_stats": fetch_short_stats(ticker)
   }
 
 
@@ -259,7 +298,7 @@ def gemini_analysis():
     else:
       try:
         stock_data = fetch_stock_data(ticker)
-        prompt_prefix = f'請根據{ticker}的歷史股價與技術分析（含10MA, 20MA, 60MA, 200MA, RSI, ATR, Volume, MACD Histogram, Bollinger Band, 200MA Diff Z-Score）配合對應的成交量 (Volume)，財報 (financials, quarterly_financials, cash_flow, quarterly_cashflow, info)，與期權資料，{additional_prompt}，列出近期財報亮點與分析師評論 (upgrades_downgrades, eps_trend, revenue_estimate) 的整理，且產生一份繁體中文個股分析報告，首先列出目前價格與關鍵支持價位以及根據財報預測數據所推算的未來股價，然後內容包含基本面 (數字要有YoY加減速的分析，以及free cashflow的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏, 並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析, 例如是否有價量背離) 與期權市場的觀察與建議。 若資料中有台灣股市 (mainforce_tw) 主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃貨或出貨狀況。'
+        prompt_prefix = f'請根據{ticker}的歷史股價與技術分析（含10MA, 20MA, 60MA, 200MA, RSI, ATR, Volume, MACD Histogram, Bollinger Band, 200MA Diff Z-Score）配合對應的成交量 (Volume)，財報 (financials, quarterly_financials, cash_flow, quarterly_cashflow, info)，與期權資料，{additional_prompt}，列出近期財報亮點與分析師評論 (upgrades_downgrades, eps_trend, revenue_estimate) 的整理，且產生一份繁體中文個股分析報告，首先列出目前價格與關鍵支持價位以及根據財報預測數據所推算的未來股價，然後內容包含基本面 (數字要有YoY加減速的分析，以及free cashflow的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏, 並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析, 例如是否有價量背離) 與期權市場的觀察與建議。 若資料中有台灣股市 (mainforce_tw) 主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃貨或出貨狀況。若資料中有short_stats，根據 sF (short floating) 與 sR (short ratio) 分析市場空單狀況及嘎空可能性。'
         prompt = f'{prompt_prefix}\n資料如下：\n{stock_data}'
         #print('----------------------------------------')
         #print(prompt)
