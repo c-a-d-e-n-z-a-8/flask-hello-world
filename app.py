@@ -24,7 +24,7 @@ si_url = os.environ.get('SI_URL')
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
 
-BARS = 100
+BARS = 200
 
 
 
@@ -262,17 +262,17 @@ def ollama_generate(prompt, model='llama3'):
 def gemini_generate_content(prompt, model_name, api_key):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": api_key
+      "Content-Type": "application/json",
+      "x-goog-api-key": api_key
     }
     data = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
-        ]
+      "contents": [
+          {
+              "parts": [
+                  {"text": prompt}
+              ]
+          }
+      ]
     }
     response = requests.post(url, headers=headers, json=data, timeout=600)
     if response.status_code == 200:
