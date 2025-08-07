@@ -103,7 +103,7 @@ def fetch_short_stats(ticker):
   return_value = {}
   
   if ".TW" not in ticker:
-    headers_benzinga = {
+    headers_si = {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
       'Accept-Language': 'zh-TW,zh-CN;q=0.9,zh;q=0.8,en-US;q=0.7,en;q=0.6',
       'Cache-Control': 'max-age=0',
