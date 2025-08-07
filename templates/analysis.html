@@ -90,62 +90,41 @@
             {% endif %}
 
             {% if analysis %}
-                <!-- Stock Chart -->
+                 <!-- Stock Chart -->
                 <br>
                 <div class="text-center mb-4">
                     {% if ".TW" in ticker %}
                         <img 
                             src="https://stock.wearn.com/finance_chart.asp?stockid={{ ticker.replace('.TWO', '').replace('.TW', '') }}&timeblock=365&sma1=10&sma2=20&sma3=60&volume=1" 
-                            alt="TW Chart" 
+                            alt="台股走勢圖" 
                             class="img-fluid rounded border"
                         >
                     {% else %}
                         <img 
                             src="https://charts2.finviz.com/chart.ashx?t={{ ticker }}&ta=1&ty=c&p=d&s=l" 
-                            alt="US Chart" 
+                            alt="美股走勢圖" 
                             class="img-fluid rounded border"
                         >
                     {% endif %}
                 </div>
                 <!-- Analysis Card -->
                 <div class="card mt-5 shadow">
-                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                        <span>📊 Analysis Result</span>
-                        <button id="toggle-btn" class="btn btn-sm btn-outline-light">Display Markdown</button>
+                    <div class="card-header bg-success text-white">
+                        📊 Analysis Result
                     </div>
                     <div class="card-body">
-                        <!-- 渲染後 HTML 會插入這裡 -->
+                        <!-- <pre class="p-3 bg-white rounded border"><code>{{ analysis }}</code></pre> -->
+                        <!-- 容器：渲染後 HTML 會插入這裡 -->
                         <div id="markdown-content" class="markdown-body"></div>
                         <!-- 隱藏 markdown 原文 -->
-                        <textarea id="raw-markdown" class="d-none form-control" style="min-height:200px"></textarea>
+                        <textarea id="raw-markdown" class="d-none">{{ analysis }}</textarea>
                     </div>
                 </div>
+                
                 <script>
                     // 將 textarea 中的 markdown 轉為 HTML
-                    const rawMarkdown = `{{ analysis | e }}`;
-                    const markdownContent = document.getElementById('markdown-content');
-                    const rawMarkdownTextarea = document.getElementById('raw-markdown');
-                    const toggleBtn = document.getElementById('toggle-btn');
-                    let showingMarkdown = false;
-            
-                    // 初始化
-                    rawMarkdownTextarea.value = rawMarkdown;
-                    markdownContent.innerHTML = marked.parse(rawMarkdown);
-            
-                    toggleBtn.addEventListener('click', function() {
-                        if (showingMarkdown) {
-                            // 顯示 HTML
-                            markdownContent.classList.remove('d-none');
-                            rawMarkdownTextarea.classList.add('d-none');
-                            toggleBtn.textContent = 'Display Markdown';
-                        } else {
-                            // 顯示 Markdown 原文
-                            markdownContent.classList.add('d-none');
-                            rawMarkdownTextarea.classList.remove('d-none');
-                            toggleBtn.textContent = 'Display Rendered HTML';
-                        }
-                        showingMarkdown = !showingMarkdown;
-                    });
+                    const rawMarkdown = document.getElementById('raw-markdown').value;
+                    document.getElementById('markdown-content').innerHTML = marked.parse(rawMarkdown);
                 </script>
             {% endif %}
 
