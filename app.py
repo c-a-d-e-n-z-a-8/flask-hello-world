@@ -457,7 +457,7 @@ def hokkien_random_word():
     except Exception:
       continue
 
-    print(r.staus_code)
+    print(r.status_code)
     print(r.text)
     
     if r.status_code != 200:
