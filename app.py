@@ -442,6 +442,7 @@ def hokkien_random_word():
   global no_index, no_list
   max_retry = 10
   base_url = 'https://sutian.moe.edu.tw/'
+  
   for _ in range(max_retry):
     # 取下一個不重複的 no
     if no_index >= len(no_list):
@@ -458,30 +459,36 @@ def hokkien_random_word():
     
     if resp.status_code != 200:
       continue
-    
-    soup = BeautifulSoup(resp.text, 'html.parser')
-    div = soup.find('div', class_='row justify-content-center')
-    if not div:
+
+    html = resp.text
+
+    # 找到 div.row.justify-content-center
+    match = re.search(r'<div class="row justify-content-center".*?</div>\s*</div>', html, re.S)
+    if not match:
       continue
+    div_html = match.group(0)
 
-    # 處理所有 <a> 標籤
-    for a in div.find_all('a', href=True):
-      href = a['href']
-      # 如果不是絕對網址，補上 base_url
-      if not href.startswith('http'):
-          a['href'] = urljoin(base_url, href.lstrip('/'))
-    
-    # 處理所有 <img> 標籤
-    for img in div.find_all('img', src=True):
-      src = img['src']
-      # 如果不是絕對網址，補上 base_url
-      if not src.startswith('http'):
-          img['src'] = urljoin(base_url, src.lstrip('/'))
+    # 補上 <a> 的完整網址
+    div_html = re.sub(
+      r'href="(?!http)([^"]+)"',
+      lambda m: f'href="{urljoin(base_url, m.group(1).lstrip("/"))}"',
+      div_html
+    )
 
-    button = div.find('button', attrs={'data-src': True})
-    audio_url = button['data-src'] if button else ''
-    return jsonify({'no': no, 'html': str(div), 'audio_url': 'https://sutian.moe.edu.tw/'+audio_url})
-  # 如果10次都沒找到，回傳查無資料
+    # 補上 <img> 的完整網址
+    div_html = re.sub(
+      r'src="(?!http)([^"]+)"',
+      lambda m: f'src="{urljoin(base_url, m.group(1).lstrip("/"))}"',
+      div_html
+    )
+
+    # 找出 button 的 data-src
+    button_match = re.search(r'<button[^>]*data-src="([^"]+)"', div_html)
+    audio_url = urljoin(base_url, button_match.group(1)) if button_match else ''
+
+    return jsonify({'no': no, 'html': div_html, 'audio_url': audio_url})
+
+  # 如果10次都沒找到
   return jsonify({'no': None, 'html': '<div>查無資料</div>', 'audio_url': ''})
 
 
