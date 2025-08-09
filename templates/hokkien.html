@@ -19,7 +19,7 @@
                             </a>
                         </h5>
                         <div id="content" class="mb-3"></div>
-                        <audio id="audio" controls autoplay class="w-100"></audio>
+                        <audio id="audio" controls autoplay class="w-100 d-none"></audio>
                     </div>
                 </div>
                 <div id="alert" class="alert alert-warning mt-3 d-none" role="alert">
@@ -39,7 +39,12 @@
                     const audio = document.getElementById('audio');
                     audio.src = data.audio_url || '';
                     if (data.audio_url) {
+                        audio.src = data.audio_url;
+                        audio.classList.remove('d-none'); // 顯示
                         audio.play();
+                    } else {
+                        audio.src = '';
+                        audio.classList.add('d-none'); // 隱藏
                     }
                     // 顯示/隱藏警告
                     document.getElementById('alert').classList.toggle('d-none', !!data.no);
@@ -50,4 +55,5 @@
         setInterval(updateWord, 8000); // 每8秒換一個
     </script>
 </body>
+
 </html>
