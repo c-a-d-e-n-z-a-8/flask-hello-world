@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>閩南語隨機學習</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container-fluid py-5">
+        <h1 class="mb-4 text-center text-primary">閩南語隨機學習</h1>
+        <div class="row justify-content-center">
+            <div class="col-md-10">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            詞彙編號：
+                            <a id="no-link" class="text-success" href="#" target="_blank">
+                                <span id="no"></span>
+                            </a>
+                        </h5>
+                        <div id="content" class="mb-3"></div>
+                        <audio id="audio" controls autoplay class="w-100"></audio>
+                    </div>
+                </div>
+                <div id="alert" class="alert alert-warning mt-3 d-none" role="alert">
+                    查無資料，請稍後再試。
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        function updateWord() {
+            fetch('/api/random')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('no').innerText = data.no || '';
+                    document.getElementById('no-link').href = 'https://sutian.moe.edu.tw/zh-hant/su/' + (data.no || '') + '/';
+                    document.getElementById('content').innerHTML = data.html || '';
+                    const audio = document.getElementById('audio');
+                    audio.src = data.audio_url || '';
+                    if (data.audio_url) {
+                        audio.play();
+                    }
+                    // 顯示/隱藏警告
+                    document.getElementById('alert').classList.toggle('d-none', !!data.no);
+                });
+        }
+
+        updateWord();
+        setInterval(updateWord, 8000); // 每8秒換一個
+    </script>
+</body>
+</html>
