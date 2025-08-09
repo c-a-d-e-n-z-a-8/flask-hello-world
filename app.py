@@ -453,11 +453,14 @@ def hokkien_random_word():
 
     url = f'https://sutian.moe.edu.tw/zh-hant/su/{no}/'
     try:
-      resp = requests.get(url, timeout=3)
+      r = requests.get(url,  timeout=5, verify=False)
     except Exception:
       continue
+
+    print(r.staus_code)
+    print(r.text)
     
-    if resp.status_code != 200:
+    if r.status_code != 200:
       continue
 
     html = resp.text
