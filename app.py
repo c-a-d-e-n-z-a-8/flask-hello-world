@@ -456,10 +456,7 @@ def hokkien_random_word():
       resp = requests.get(url,  timeout=5, verify=False)
     except Exception:
       continue
-
-    print(resp.status_code)
-    print(resp.text)
-    
+   
     if resp.status_code != 200:
       continue
 
