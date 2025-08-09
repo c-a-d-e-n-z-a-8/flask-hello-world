@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, Response
+from flask import Flask, request, render_template, Response, jsonify
 import yfinance as yf
 import pandas as pd
 import talib
@@ -10,6 +10,10 @@ from itertools import dropwhile
 from io import StringIO
 import re
 
+import requests
+
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 
 
@@ -391,26 +395,86 @@ def rewrite_html(html, base_url):
 ################################################################################################################################################################
 @app.route('/proxy')
 def proxy():
-    target_url = request.args.get('url')
-    if not target_url:
-        return "請提供 ?url= 參數", 400
+  target_url = request.args.get('url')
+  if not target_url:
+      return "請提供 ?url= 參數", 400
 
+  try:
+      resp = requests.get(target_url, headers={
+          'User-Agent': request.headers.get('User-Agent', 'Mozilla/5.0')
+      }, timeout=10)
+      content_type = resp.headers.get('Content-Type', '')
+
+      if 'text/html' in content_type:
+          # 只重寫 HTML
+          html = resp.text
+          html = rewrite_html(html, target_url)
+          return Response(html, status=resp.status_code, content_type=content_type)
+      else:
+          # 其他資源直接回傳
+          return Response(resp.content, status=resp.status_code, content_type=content_type)
+  except Exception as e:
+      return f"Error: {e}", 500
+
+
+
+
+################################################################################################################################################################
+################################################################################################################################################################
+@app.route('/hokkien/')
+def index():
+  return render_template('hokkien.html')
+
+
+
+
+################################################################################################################################################################
+@app.route('/api/random')
+def random_word():
+  global no_index, no_list
+  max_retry = 10
+  base_url = 'https://sutian.moe.edu.tw/'
+  for _ in range(max_retry):
+    # 取下一個不重複的 no
+    if no_index >= len(no_list):
+      random.shuffle(no_list)
+      no_index = 0
+    no = no_list[no_index]
+    no_index += 1
+
+    url = f'https://sutian.moe.edu.tw/zh-hant/su/{no}/'
     try:
-        resp = requests.get(target_url, headers={
-            'User-Agent': request.headers.get('User-Agent', 'Mozilla/5.0')
-        }, timeout=10)
-        content_type = resp.headers.get('Content-Type', '')
+      resp = requests.get(url, timeout=3)
+    except Exception:
+      continue
+    
+    if resp.status_code != 200:
+      continue
+    
+    soup = BeautifulSoup(resp.text, 'html.parser')
+    div = soup.find('div', class_='row justify-content-center')
+    if not div:
+      continue
 
-        if 'text/html' in content_type:
-            # 只重寫 HTML
-            html = resp.text
-            html = rewrite_html(html, target_url)
-            return Response(html, status=resp.status_code, content_type=content_type)
-        else:
-            # 其他資源直接回傳
-            return Response(resp.content, status=resp.status_code, content_type=content_type)
-    except Exception as e:
-        return f"Error: {e}", 500
+    # 處理所有 <a> 標籤
+    for a in div.find_all('a', href=True):
+      href = a['href']
+      # 如果不是絕對網址，補上 base_url
+      if not href.startswith('http'):
+          a['href'] = urljoin(base_url, href.lstrip('/'))
+    
+    # 處理所有 <img> 標籤
+    for img in div.find_all('img', src=True):
+      src = img['src']
+      # 如果不是絕對網址，補上 base_url
+      if not src.startswith('http'):
+          img['src'] = urljoin(base_url, src.lstrip('/'))
+
+    button = div.find('button', attrs={'data-src': True})
+    audio_url = button['data-src'] if button else ''
+    return jsonify({'no': no, 'html': str(div), 'audio_url': 'https://sutian.moe.edu.tw/'+audio_url})
+  # 如果10次都沒找到，回傳查無資料
+  return jsonify({'no': None, 'html': '<div>查無資料</div>', 'audio_url': ''})
 
 
 
