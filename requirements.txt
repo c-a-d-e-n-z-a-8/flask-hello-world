@@ -4,4 +4,3 @@ pandas
 yfinance
 google-generativeai
 Gunicorn
-BeautifulSoup
