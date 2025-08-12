@@ -437,6 +437,30 @@ def hokkien():
 
 
 ################################################################################################################################################################
+def replace_button_with_audio(html):
+  # 用 re 找出 button 的 data-src
+  def repl(m):
+    audio_url = m.group(1)
+    # 你可以自訂 audio 樣式，這裡用 controls 會有原生播放icon
+    return f'''
+    <audio controls style="vertical-align: middle; height: 20px width: 20px;">
+        <source src="{audio_url}" type="audio/mpeg">
+        您的瀏覽器不支援音訊播放。
+    </audio>
+      '''
+  # 把 button 換成 audio
+  new_html = re.sub(
+      r'<button[^>]*data-src="([^"]+)"[^>]*>.*?</button>',
+      repl,
+      html,
+      flags=re.S
+  )
+  return new_html
+
+
+
+
+################################################################################################################################################################
 @app.route('/api/random')
 def hokkien_random_word():
   global no_index, no_list
@@ -469,9 +493,18 @@ def hokkien_random_word():
     div_html = match.group(0)
 
     # 補上 <a> 的完整網址
+    #div_html = re.sub(
+    #  r'href="(?!http)([^"]+)"',
+    #  lambda m: f'href="{urljoin(base_url, m.group(1).lstrip("/"))}"',
+    #  div_html
+    #)
+    
     div_html = re.sub(
       r'href="(?!http)([^"]+)"',
-      lambda m: f'href="{urljoin(base_url, m.group(1).lstrip("/"))}"',
+      lambda m: (
+        f'href="{m.group(1)}"' if m.group(1).startswith('#')
+        else f'href="{urljoin(base_url, m.group(1).lstrip("/"))}"'
+      ),
       div_html
     )
 
@@ -485,6 +518,15 @@ def hokkien_random_word():
     # 找出 button 的 data-src
     button_match = re.search(r'<button[^>]*data-src="([^"]+)"', div_html)
     audio_url = urljoin(base_url, button_match.group(1)) if button_match else ''
+
+    # 補上 <button> 的完整 data-src
+    div_html = re.sub(
+      r'data-src="(?!http)([^"]+)"',
+      lambda m: f'data-src="{urljoin(base_url, m.group(1).lstrip("/"))}"',
+      div_html
+    )
+
+    div_html = replace_button_with_audio(div_html)
 
     return jsonify({'no': no, 'html': div_html, 'audio_url': audio_url})
 
