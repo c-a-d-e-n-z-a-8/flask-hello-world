@@ -332,7 +332,7 @@ def gemini_generate_content(prompt, model_name, api_key):
 
 
 ################################################################################################################################################################
-@app.route('/analysis/', methods=['GET', 'POST'])
+@app.route('/aia/', methods=['GET', 'POST'])
 def gemini_analysis():
   gc.collect()
   
