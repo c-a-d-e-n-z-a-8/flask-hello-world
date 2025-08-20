@@ -15,6 +15,9 @@ import requests
 from urllib.parse import urljoin
 import random
 
+from pyecharts.charts import Bar, Tab
+from pyecharts import options as opts
+from pyecharts.commons.utils import JsCode
 
 
 app = Flask(__name__)
@@ -617,6 +620,118 @@ def hokkien_random_word():
 
   # 如果10次都沒找到
   return jsonify({'no': None, 'html': '<div>查無資料</div>', 'audio_url': ''})
+
+
+
+
+################################################################################################################################################################
+################################################################################################################################################################
+def generate_option_tabs(ticker: str):
+    stock = yf.Ticker(ticker)
+    expirations = stock.options
+
+    tab = Tab()
+    all_options_list = []
+
+    for expiry in expirations:
+        try:
+            opt_chain = stock.option_chain(expiry)
+            calls = opt_chain.calls
+            puts = opt_chain.puts
+        except Exception:
+            continue
+
+        # 計算 premium
+        calls["premium_est"] = calls["lastPrice"] * calls["volume"] * 100
+        puts["premium_est"] = puts["lastPrice"] * puts["volume"] * 100
+
+        options = pd.concat([calls.assign(type="Call"), puts.assign(type="Put")])
+        options["expiry"] = expiry
+
+        # 過濾條件
+        options = options[(options["volume"] > 0) & (options["premium_est"] > 500_000)]
+        if options.empty:
+            continue
+
+        options["premium_K"] = options["premium_est"] / 1000
+        options = options.sort_values(by="premium_K", ascending=False)
+
+        all_options_list.append(options)
+
+        # 繪圖
+        contracts = options["contractSymbol"].tolist()
+        premiums = options["premium_K"].round(1).tolist()
+        color_list = ["#FF4C4C" if t=="Call" else "#2ECC71" for t in options["type"]]
+
+        bar = (
+            Bar(init_opts=opts.InitOpts(width="1280px", height="720px"))
+            .add_xaxis(contracts)
+            .add_yaxis("Premium (K USD)", premiums,
+                       #itemstyle_opts=opts.ItemStyleOpts(color="auto"),
+                       itemstyle_opts=opts.ItemStyleOpts(color=JsCode("""
+                          function(params) {
+                            var colors = %s;
+                            return colors[params.dataIndex];
+                          }
+                          """ % color_list)
+                       ),
+                       label_opts=opts.LabelOpts(is_show=True, position="top"))
+            .set_global_opts(
+                title_opts=opts.TitleOpts(title=f"{ticker.upper()} Options (Expiry {expiry})"),
+                xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, font_size=8)),
+                yaxis_opts=opts.AxisOpts(name="Premium (K USD)"),
+            )
+        )
+
+        tab.add(bar, expiry)
+
+    # 總覽 tab
+    if all_options_list:
+        all_options = pd.concat(all_options_list)
+        all_top10 = all_options.sort_values(by="premium_K", ascending=False).head(10)
+
+        contracts = (all_top10["contractSymbol"] + " (" + all_top10["expiry"] + ")").tolist()
+        premiums = all_top10["premium_K"].round(1).tolist()
+        color_list = ["#FF4C4C" if t=="Call" else "#2ECC71" for t in all_top10["type"]]
+
+        overview_bar = (
+            Bar(init_opts=opts.InitOpts(width="1280px", height="720px"))
+            .add_xaxis(contracts)
+            .add_yaxis("Premium (K USD)", premiums,
+                       #itemstyle_opts=opts.ItemStyleOpts(color="auto"),
+                       itemstyle_opts=opts.ItemStyleOpts(color=JsCode("""
+                          function(params) {
+                            var colors = %s;
+                            return colors[params.dataIndex];
+                          }
+                          """ % color_list)
+                       ),
+                       label_opts=opts.LabelOpts(is_show=True, position="top"))
+            .set_global_opts(
+                title_opts=opts.TitleOpts(title=f"{ticker.upper()} Options Overview (Top 10 Premium)"),
+                xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, font_size=8)),
+                yaxis_opts=opts.AxisOpts(name="Premium (K USD)"),
+            )
+        )
+        
+        tab.add(overview_bar, "Overview")
+        
+    return tab.render_embed()
+
+
+
+
+################################################################################################################################################################
+@app.route("/optionpremium/", methods=["GET", "POST"])
+def index():
+    chart_html = None
+    ticker = None
+    if request.method == "POST":
+        ticker = request.form.get("ticker")
+        if ticker:
+            chart_html = generate_option_tabs(ticker)
+
+    return render_template("optionpremium.html", chart_html=chart_html, ticker=ticker)
 
 
 
