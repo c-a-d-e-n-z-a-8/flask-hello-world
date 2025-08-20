@@ -360,12 +360,12 @@ def gemini_analysis():
   analysis = None
   error = None
   ticker = ''
-  model_name = 'gemini-2.5-pro'  # 預設值
+  model_name = 'gemini-2.5-flash'  # 預設值
 
   if request.method == 'POST':
     ticker = request.form.get('ticker', '').strip()
     additional_prompt = request.form.get('additional_prompt', '').strip()
-    model_name = request.form.get('model', 'gemini-2.0-flash')
+    model_name = request.form.get('model', 'gemini-2.5-flash')
     
     if not ticker:
       error = "請輸入股票代碼"
