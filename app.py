@@ -331,6 +331,27 @@ def gemini_generate_content(prompt, model_name, api_key):
 
 
 
+
+################################################################################################################################################################
+def dict_to_table(data: list[dict], limit=60) -> str:
+  if not data:
+    return "無資料"
+  df = pd.DataFrame(data).tail(limit)
+  return df.to_string(index=False)
+
+
+
+
+################################################################################################################################################################
+def dict_to_table_finance(data: list[dict]) -> str:
+  if not data:
+    return "無資料"
+  df = pd.DataFrame(data)
+  return df.to_string()
+
+
+
+
 ################################################################################################################################################################
 @app.route('/aia/', methods=['GET', 'POST'])
 def gemini_analysis():
@@ -351,11 +372,75 @@ def gemini_analysis():
     else:
       try:
         stock_data = fetch_stock_data(ticker)
+        """
         prompt_prefix = f'請根據{ticker}的歷史股價與技術分析（含10MA， 20MA， 60MA， 200MA， RSI， ATR， Volume， MACD Histogram (MACDH)， 60MA Bollinger Band (BBU， BBD)， 200MA Diff Z-Score (200MADZ)）配合對應的成交量 (Volume)，財報 (financials， quarterly_financials， cash_flow， quarterly_cashflow， info)，與期權資料，{additional_prompt}，列出近期財報亮點與分析師評論 (upgrades_downgrades， eps_trend， revenue_estimate) 的整理，且產生一份繁體中文個股分析報告，首先列出公司近期業務，然後列出目前價格與關鍵支持價位，以及根據財報預測數據所推算的未來股價，然後內容包含基本面 (數字要有YoY加減速的分析，以及free cashflow的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏與對應的PE PS PB ratio，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析， 例如是否有價量背離或技術指標與股價背離) 與期權市場的觀察與建議。 若資料中有台灣股市 (mainforce_tw) 主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中有short_stats，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。若資料中有台灣股市 (securities_financing_tw) 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)，分析市場空單狀況，嘎空可能性以及未來主力操作方向。'
         prompt = f'{prompt_prefix}\n資料如下：\n{stock_data}'
         #print('----------------------------------------')
         #print(prompt)
         #print('----------------------------------------')
+        """
+        history_table = dict_to_table(stock_data['history'])
+        mf_tw_table = dict_to_table(stock_data['mainforce_tw'])
+        short_table = dict_to_table(stock_data['short_stats'])
+        sf_tw_table = dict_to_table(stock_data['securities_financing_tw'])
+        financials_table = dict_to_table_finance(stock_data['financials'])
+        financials_q_table = dict_to_table_finance(stock_data['quarterly_financials'])
+        cashflow_table = dict_to_table_finance(stock_data['cash_flow'])
+        cashflow_q_table = dict_to_table_finance(stock_data['quarterly_cashflow'])
+        #print(stock_data['info'])
+        #info_table = dict_to_table_finance(stock_data['info'])
+        updown_table = dict_to_table_finance(stock_data['upgrades_downgrades'])
+        eps_trend_table = dict_to_table_finance(stock_data['eps_trend'])
+        revenue_estimate_table = dict_to_table_finance(stock_data['revenue_estimate'])
+       
+        print('----------------------------------------')
+        prompt = f"""
+請根據 {ticker} 的下列資料進行分析並產生一份繁體中文個股分析報告，首先列出公司近期業務，然後列出目前價格與關鍵支持價位，以及根據財報預測數據所推算的未來股價，然後內容包含基本面 (數字要有YoY加減速的分析，以及自由現金流的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏與對應的PE/PS/PB ratio，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析，例如是否有價量背離或技術指標與股價背離) 與期權市場的觀察與建議。 若mf_tw_table資料中有台灣股市主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中short_table有值，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。若資料中有台灣股市 (sf_tw_table) 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)，分析市場空單狀況，嘎空可能性以及未來主力操作方向。 其他需求: {additional_prompt}
+
+[技術面]
+欄位縮寫: MACD Histogram (MACDH)， 60MA Bollinger Band (BBU， BBD)， 200MA Diff Z-Score (200MADZ)
+{history_table}
+
+[台股主力籌碼]
+欄位縮寫: 主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)
+{mf_tw_table}
+
+[台股融資融券與借券賣出餘額]
+欄位縮寫: 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)
+{sf_tw_table}
+
+[空單狀況]
+欄位縮寫: SF (short floating)， SR (short ratio)
+{short_table}
+
+[財報資料]
+年度財報:
+{financials_table}
+
+季度財報:
+{financials_q_table}
+
+年度現金流:
+{cashflow_table}
+
+季度現金流:
+{cashflow_q_table}
+
+公司概況:
+{stock_data['info']}
+
+EPS年度趨勢:
+{eps_trend_table}
+
+營收預估:
+{revenue_estimate_table}
+
+評等變化:
+{updown_table}
+        """
+        print(prompt)
+        print('----------------------------------------')
+        
         if use_ollama == True:
           analysis = ollama_generate(prompt, model=ollama_model)
         else:
