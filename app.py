@@ -416,6 +416,9 @@ def gemini_analysis():
 欄位縮寫: SF (short floating)， SR (short ratio)
 {short_table}
 
+[期權市場]
+{stock_data['options']}
+
 [財報資料]
 年度財報:
 {financials_table}
