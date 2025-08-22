@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, Response, jsonify
+from flask import Flask, request, render_template, Response, jsonify, render_template_string
 import yfinance as yf
 import pandas as pd
 import talib
@@ -19,8 +19,12 @@ from pyecharts.charts import Bar, Tab
 from pyecharts import options as opts
 from pyecharts.commons.utils import JsCode
 
+from datetime import date, datetime, timedelta
+from curl_cffi import requests
+import numpy as np
+from pyecharts import options as opts
+from pyecharts.charts import Line
 
-app = Flask(__name__)
 
 # Initialization
 api_key = os.environ.get('API_KEY')
@@ -29,14 +33,54 @@ cm_url2 = os.environ.get('CM_URL2')
 si_url = os.environ.get('SI_URL')
 tw_sf_url = os.environ.get('TW_SF_URL')
 
+
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
 
 BARS = 200
 
 
+app = Flask(__name__)
 
 
+
+
+################################################################################################################################################################
+@app.route('/link/')
+def link():
+  links = []
+  for rule in app.url_map.iter_rules():
+    if "GET" in rule.methods and not rule.rule.startswith('/static'):
+        links.append((rule.endpoint, rule.rule))
+  html = '''
+  <!DOCTYPE html>
+  <html lang="zh">
+  <head>
+    <meta charset="UTF-8">
+    <title>所有路由</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  </head>
+  <body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Links</h1>
+        <ul class="list-group">
+        {% for endpoint, url in links %}
+            <li class="list-group-item">
+                <a href="{{ url }}" class="link-primary">{{ url }}</a>
+                <span class="badge bg-secondary ms-2">{{ endpoint }}</span>
+            </li>
+        {% endfor %}
+        </ul>
+    </div>
+  </body>
+  </html>
+  '''
+  return render_template_string(html, links=links)
+
+
+
+
+################################################################################################################################################################
 ################################################################################################################################################################
 def fetch_tw_whale(ticker):
   
@@ -337,27 +381,27 @@ def ollama_generate(prompt, model='llama3'):
 
 ################################################################################################################################################################
 def gemini_generate_content(prompt, model_name, api_key):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-    headers = {
-      "Content-Type": "application/json",
-      "x-goog-api-key": api_key
-    }
-    data = {
-      "contents": [
-          {
-              "parts": [
-                  {"text": prompt}
-              ]
-          }
-      ]
-    }
-    response = requests.post(url, headers=headers, json=data, timeout=600)
-    if response.status_code == 200:
-      result = response.json()
-      # 取出回應內容
-      return result['candidates'][0]['content']['parts'][0]['text']
-    else:
-      raise Exception(f"❌ Gemini API error: {response.status_code} {response.text}")
+  url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+  headers = {
+    "Content-Type": "application/json",
+    "x-goog-api-key": api_key
+  }
+  data = {
+    "contents": [
+        {
+            "parts": [
+                {"text": prompt}
+            ]
+        }
+    ]
+  }
+  response = requests.post(url, headers=headers, json=data, timeout=600)
+  if response.status_code == 200:
+    result = response.json()
+    # 取出回應內容
+    return result['candidates'][0]['content']['parts'][0]['text']
+  else:
+    raise Exception(f"❌ Gemini API error: {response.status_code} {response.text}")
 
 
 
@@ -519,8 +563,8 @@ def rewrite_html(html, base_url):
     orig_url = match.group(2)
     # 處理相對路徑
     if not orig_url.startswith('http'):
-        from urllib.parse import urljoin
-        orig_url = urljoin(base_url, orig_url)
+      from urllib.parse import urljoin
+      orig_url = urljoin(base_url, orig_url)
     return f'{match.group(1)}/proxy?url={orig_url}{match.group(3)}'
 
   # 只處理 src 和 href
@@ -535,22 +579,23 @@ def rewrite_html(html, base_url):
 def proxy():
   target_url = request.args.get('url')
   if not target_url:
-      return "請提供 ?url= 參數", 400
+    return "請提供 ?url= 參數", 400
 
   try:
-      resp = requests.get(target_url, headers={
-          'User-Agent': request.headers.get('User-Agent', 'Mozilla/5.0')
-      }, timeout=10)
-      content_type = resp.headers.get('Content-Type', '')
+    resp = requests.get(target_url, headers={
+      'User-Agent': request.headers.get('User-Agent', 'Mozilla/5.0')
+    }, timeout=10)
+    content_type = resp.headers.get('Content-Type', '')
 
-      if 'text/html' in content_type:
-          # 只重寫 HTML
-          html = resp.text
-          html = rewrite_html(html, target_url)
-          return Response(html, status=resp.status_code, content_type=content_type)
-      else:
-          # 其他資源直接回傳
-          return Response(resp.content, status=resp.status_code, content_type=content_type)
+    if 'text/html' in content_type:
+      # 只重寫 HTML
+      html = resp.text
+      html = rewrite_html(html, target_url)
+      return Response(html, status=resp.status_code, content_type=content_type)
+    else:
+      # 其他資源直接回傳
+      return Response(resp.content, status=resp.status_code, content_type=content_type)
+
   except Exception as e:
       return f"Error: {e}", 500
 
@@ -588,10 +633,10 @@ def replace_button_with_audio(html):
       '''
   # 把 button 換成 audio
   new_html = re.sub(
-      r'<button[^>]*data-src="([^"]+)"[^>]*>.*?</button>',
-      repl,
-      html,
-      flags=re.S
+    r'<button[^>]*data-src="([^"]+)"[^>]*>.*?</button>',
+    repl,
+    html,
+    flags=re.S
   )
   return new_html
 
@@ -677,111 +722,551 @@ def hokkien_random_word():
 ################################################################################################################################################################
 ################################################################################################################################################################
 def generate_option_tabs(ticker: str):
-    stock = yf.Ticker(ticker)
-    expirations = stock.options
+  stock = yf.Ticker(ticker)
+  expirations = stock.options
 
-    tab = Tab()
-    all_options_list = []
+  tab = Tab()
+  all_options_list = []
 
-    for expiry in expirations:
-        try:
-            opt_chain = stock.option_chain(expiry)
-            calls = opt_chain.calls
-            puts = opt_chain.puts
-        except Exception:
-            continue
+  for expiry in expirations:
+    try:
+      opt_chain = stock.option_chain(expiry)
+      calls = opt_chain.calls
+      puts = opt_chain.puts
+    except Exception:
+      continue
 
-        # 計算 premium
-        calls["premium_est"] = calls["lastPrice"] * calls["volume"] * 100
-        puts["premium_est"] = puts["lastPrice"] * puts["volume"] * 100
+    # 計算 premium
+    calls["premium_est"] = calls["lastPrice"] * calls["volume"] * 100
+    puts["premium_est"] = puts["lastPrice"] * puts["volume"] * 100
 
-        options = pd.concat([calls.assign(type="Call"), puts.assign(type="Put")])
-        options["expiry"] = expiry
+    options = pd.concat([calls.assign(type="Call"), puts.assign(type="Put")])
+    options["expiry"] = expiry
 
-        # 過濾條件
-        options = options[(options["volume"] > 0) & (options["premium_est"] > 200_000)]
-        if options.empty:
-            continue
+    # 過濾條件
+    options = options[(options["volume"] > 0) & (options["premium_est"] > 200_000)]
+    if options.empty:
+        continue
 
-        options["premium_K"] = options["premium_est"] / 1000
-        options = options.sort_values(by="premium_K", ascending=False)
+    options["premium_K"] = options["premium_est"] / 1000
+    options = options.sort_values(by="premium_K", ascending=False)
 
-        all_options_list.append(options)
+    all_options_list.append(options)
 
-        # 繪圖
-        contracts = options["contractSymbol"].tolist()
-        premiums = options["premium_K"].round(1).tolist()
-        color_list = ["#FF4C4C" if t=="Call" else "#2ECC71" for t in options["type"]]
+    # 繪圖
+    contracts = options["contractSymbol"].tolist()
+    premiums = options["premium_K"].round(1).tolist()
+    color_list = ["#FF4C4C" if t=="Call" else "#2ECC71" for t in options["type"]]
 
-        bar = (
-            Bar(init_opts=opts.InitOpts(width="1280px", height="720px"))
-            .add_xaxis(contracts)
-            .add_yaxis("Premium (K USD)", premiums,
-                       #itemstyle_opts=opts.ItemStyleOpts(color="auto"),
-                       itemstyle_opts=opts.ItemStyleOpts(color=JsCode("""
-                          function(params) {
-                            var colors = %s;
-                            return colors[params.dataIndex];
-                          }
-                          """ % color_list)
-                       ),
-                       label_opts=opts.LabelOpts(is_show=True, position="top"))
-            .set_global_opts(
-                title_opts=opts.TitleOpts(title=f"{ticker.upper()} Options (Expiry {expiry})"),
-                xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, font_size=8)),
-                yaxis_opts=opts.AxisOpts(name="Premium (K USD)"),
-            )
-        )
+    bar = (
+      Bar(init_opts=opts.InitOpts(width="1280px", height="720px"))
+      .add_xaxis(contracts)
+      .add_yaxis("Premium (K USD)", premiums,
+                 #itemstyle_opts=opts.ItemStyleOpts(color="auto"),
+                 itemstyle_opts=opts.ItemStyleOpts(color=JsCode("""
+                    function(params) {
+                      var colors = %s;
+                      return colors[params.dataIndex];
+                    }
+                    """ % color_list)
+                 ),
+                 label_opts=opts.LabelOpts(is_show=True, position="top"))
+      .set_global_opts(
+        title_opts=opts.TitleOpts(title=f"{ticker.upper()} Options (Expiry {expiry})"),
+        xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, font_size=8)),
+        yaxis_opts=opts.AxisOpts(name="Premium (K USD)"),
+      )
+    )
 
-        tab.add(bar, expiry)
+    tab.add(bar, expiry)
 
-    # 總覽 tab
-    if all_options_list:
-        all_options = pd.concat(all_options_list)
-        all_top10 = all_options.sort_values(by="premium_K", ascending=False).head(10)
+  # 總覽 tab
+  if all_options_list:
+    all_options = pd.concat(all_options_list)
+    all_top10 = all_options.sort_values(by="premium_K", ascending=False).head(10)
 
-        contracts = (all_top10["contractSymbol"] + " (" + all_top10["expiry"] + ")").tolist()
-        premiums = all_top10["premium_K"].round(1).tolist()
-        color_list = ["#FF4C4C" if t=="Call" else "#2ECC71" for t in all_top10["type"]]
+    contracts = (all_top10["contractSymbol"] + " (" + all_top10["expiry"] + ")").tolist()
+    premiums = all_top10["premium_K"].round(1).tolist()
+    color_list = ["#FF4C4C" if t=="Call" else "#2ECC71" for t in all_top10["type"]]
 
-        overview_bar = (
-            Bar(init_opts=opts.InitOpts(width="1280px", height="720px"))
-            .add_xaxis(contracts)
-            .add_yaxis("Premium (K USD)", premiums,
-                       #itemstyle_opts=opts.ItemStyleOpts(color="auto"),
-                       itemstyle_opts=opts.ItemStyleOpts(color=JsCode("""
-                          function(params) {
-                            var colors = %s;
-                            return colors[params.dataIndex];
-                          }
-                          """ % color_list)
-                       ),
-                       label_opts=opts.LabelOpts(is_show=True, position="top"))
-            .set_global_opts(
-                title_opts=opts.TitleOpts(title=f"{ticker.upper()} Options Overview (Top 10 Premium)"),
-                xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, font_size=8)),
-                yaxis_opts=opts.AxisOpts(name="Premium (K USD)"),
-            )
-        )
-        
-        tab.add(overview_bar, "Overview")
-        
-    return tab.render_embed()
+    overview_bar = (
+      Bar(init_opts=opts.InitOpts(width="1280px", height="720px"))
+      .add_xaxis(contracts)
+      .add_yaxis("Premium (K USD)", premiums,
+                 #itemstyle_opts=opts.ItemStyleOpts(color="auto"),
+                 itemstyle_opts=opts.ItemStyleOpts(color=JsCode("""
+                    function(params) {
+                      var colors = %s;
+                      return colors[params.dataIndex];
+                    }
+                    """ % color_list)
+                 ),
+                 label_opts=opts.LabelOpts(is_show=True, position="top"))
+      .set_global_opts(
+        title_opts=opts.TitleOpts(title=f"{ticker.upper()} Options Overview (Top 10 Premium)"),
+        xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, font_size=8)),
+        yaxis_opts=opts.AxisOpts(name="Premium (K USD)"),
+      )
+    )
+    
+    tab.add(overview_bar, "Overview")
+
+  return tab.render_embed()
 
 
 
 
 ################################################################################################################################################################
 @app.route("/optionpremium/", methods=["GET", "POST"])
-def index():
-    chart_html = None
-    ticker = None
-    if request.method == "POST":
-        ticker = request.form.get("ticker")
-        if ticker:
-            chart_html = generate_option_tabs(ticker)
+def optionpremium():
+  chart_html = None
+  ticker = None
+  if request.method == "POST":
+    ticker = request.form.get("ticker")
+    if ticker:
+      chart_html = generate_option_tabs(ticker)
 
-    return render_template("optionpremium.html", chart_html=chart_html, ticker=ticker)
+  return render_template("optionpremium.html", chart_html=chart_html, ticker=ticker)
+
+
+
+
+################################################################################################################################################################
+################################################################################################################################################################
+def get_stock_data(ticker, start_date, end_date, session, crumb="F7GXvns0Eji"):
+
+  start_epoch = int(datetime.combine(start_date, datetime.min.time()).timestamp())
+  end_epoch = int(datetime.combine(end_date, datetime.min.time()).timestamp())
+  url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?period1={start_epoch}&period2={end_epoch}&interval=1d&events=history&includeAdjustedClose=true&events=div%2Csplits&crumb={crumb}"
+  
+  headers = {'user-agent': 'Mozilla/5.0'}
+  r = session.get(url, headers=headers, timeout=5)
+  r.raise_for_status()
+  data = r.json()
+  result = data["chart"]["result"][0]
+  quote = result["indicators"]["quote"][0]
+  adjclose = result["indicators"]["adjclose"][0]["adjclose"]
+  df = pd.DataFrame({
+    "Date": pd.to_datetime(result["timestamp"], unit='s'),
+    "Open": quote["open"],
+    "High": quote["high"],
+    "Low": quote["low"],
+    "Close": quote["close"],
+    "Adj Close": adjclose,
+    "Volume": quote["volume"]
+  }).set_index("Date")
+  df.name = ticker
+  return df
+
+
+
+
+################################################################################################################################################################
+def calculate_variation(df):
+  
+  df['Adj Close Var'] = (df['Adj Close'] / df['Adj Close'].iloc[0]) * 100
+  return df
+
+
+
+
+################################################################################################################################################################
+def align_dataframes(dfs):
+  
+  min_len = min(len(df) for df in dfs)
+  base_index = min(range(len(dfs)), key=lambda i: len(dfs[i]))
+  base_dates = dfs[base_index].index
+  for i, df in enumerate(dfs):
+    if len(df) != min_len:
+      dfs[i] = df.reindex(base_dates, method='ffill')
+      dfs[i].name = df.name
+  return dfs, base_index
+
+
+
+
+################################################################################################################################################################
+def compute_beta(df1, df2):
+  m = df1['Adj Close'].pct_change().dropna()
+  t = df2['Adj Close'].pct_change().dropna()
+  min_len = min(len(m), len(t))
+  m, t = m[-min_len:], t[-min_len:]
+  cov = np.cov(m, t)[0][1]
+  var = np.var(m)
+  return cov / var if var != 0 else np.nan
+
+
+
+
+################################################################################################################################################################
+@app.route('/compare', methods=['GET', 'POST'])
+def compare():
+  
+  if request.method == 'POST':
+    tickers = request.form.get('tickers')
+    days = int(request.form.get('days', 1800))
+  else:
+    tickers = request.args.get('tickers')
+    days = int(request.args.get('days', 1800))
+    
+  if not tickers:
+    return "Please provide tickers parameter, e.g. ?tickers=AAPL,MSFT", 400
+  tickers = [t.strip() for t in tickers.replace(' ', ',').split(',') if t.strip()]
+  if len(tickers) < 1:
+    return "Please provide at least one ticker.", 400
+
+  today = date.today()
+  start_date = today - timedelta(days=days)
+  session = requests.Session(impersonate="chrome")
+ 
+  stock_dfs = []
+  errors = []
+  for ticker in tickers:
+    try:
+      df = get_stock_data(ticker, start_date, today, session)
+      df = calculate_variation(df)
+      stock_dfs.append(df)
+    except Exception as e:
+      errors.append(f"{ticker}: {e}")
+
+  if not stock_dfs:
+    return "No data fetched.<br>" + "<br>".join(errors), 500
+
+  stock_dfs, base_idx = align_dataframes(stock_dfs)
+
+  # Calculate beta
+  beta_dict = {}
+  base_df = stock_dfs[0]
+  for i in range(1, len(stock_dfs)):
+    beta_value = compute_beta(base_df, stock_dfs[i])
+    beta_dict[stock_dfs[i].name] = beta_value
+
+  # Beta string
+  beta_str = "\n".join([f"{name} / {base_df.name}: β={beta_value:.2f}" for name, beta_value in beta_dict.items()])
+
+  # Stats string
+  stats_string = ""
+  for df in stock_dfs:
+    stats_string += f'{df.name}: δ={df["Adj Close Var"].iloc[-1] - df["Adj Close Var"].iloc[0]:5.2f}%, σ={df["Adj Close Var"].std():5.2f}%\n'
+  
+  # Plot
+  line = Line(init_opts=opts.InitOpts(page_title=" vs ".join(tickers), height='900px', width='1880px'))
+  dates = stock_dfs[base_idx].index.strftime('%Y%m%d').tolist()
+  line.add_xaxis(xaxis_data=dates)
+  for df in stock_dfs:
+    line.add_yaxis(
+      series_name=df.name,
+      y_axis=df["Adj Close Var"].map('{:.2f}'.format).tolist(),
+      is_smooth=False,
+      is_symbol_show=False,
+      is_hover_animation=False,
+      linestyle_opts=opts.LineStyleOpts(width=1, opacity=0.9)
+    )
+  
+  line.set_global_opts(
+    xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=10)),
+    yaxis_opts=opts.AxisOpts(is_scale=False, splitarea_opts=opts.SplitAreaOpts(is_show=True, areastyle_opts=opts.AreaStyleOpts(opacity=0.5))),
+    tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross", textstyle_opts=opts.TextStyleOpts(font_size=12)),
+    legend_opts=opts.LegendOpts(textstyle_opts=opts.TextStyleOpts(font_size=12)),
+    datazoom_opts=[
+      opts.DataZoomOpts(is_show=False, type_="inside", xaxis_index=[0], range_start=0, range_end=100, is_realtime=False),
+      opts.DataZoomOpts(is_show=True, xaxis_index=[0], type_="slider", pos_top="98%", range_start=0, range_end=100, is_realtime=False),
+    ],
+    title_opts=opts.TitleOpts(
+      title=stats_string,
+      subtitle=beta_str,  # beta in subtitle
+      pos_left='10%',
+      pos_top='10%',
+      title_textstyle_opts=opts.TextStyleOpts(font_size=12),
+      subtitle_textstyle_opts=opts.TextStyleOpts(font_size=12)
+    ),
+    toolbox_opts=opts.ToolboxOpts(is_show=True, feature={"dataZoom": {"yAxisIndex": "none"}, "restore": {}, "saveAsImage": {}}),
+  )
+
+  # Return HTML
+  return line.render_embed()
+
+
+
+
+################################################################################################################################################################
+@app.route('/performance/', methods=['GET'])
+def performance_diff():
+  return '''
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+      <meta charset="UTF-8">
+      <title>Stock Compare</title>
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+      <style>
+          body {
+              background: #f8f9fa;
+          }
+          .container {
+              max-width: 600px;
+              margin-top: 80px;
+              background: #fff;
+              border-radius: 12px;
+              box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+              padding: 32px 32px 24px 32px;
+          }
+          .form-label {
+              font-weight: 500;
+          }
+          .btn-primary {
+              width: 100%;
+              font-size: 1.1rem;
+              padding: 10px;
+          }
+          h2 {
+              text-align: center;
+              margin-bottom: 32px;
+              font-weight: 700;
+              color: #2c3e50;
+          }
+      </style>
+  </head>
+  <body>
+      <div class="container">
+          <h2>Stock Performance Comparison</h2>
+          <form action="/compare" method="post">
+              <div class="mb-3">
+                  <label for="tickers" class="form-label">Tickers (comma separated):</label>
+                  <input type="text" class="form-control" id="tickers" name="tickers" value="^GSPC,AAPL" required>
+              </div>
+              <div class="mb-3">
+                  <label for="days" class="form-label">Days:</label>
+                  <input type="number" class="form-control" id="days" name="days" value="1800" min="1" required>
+              </div>
+              <button type="submit" class="btn btn-primary">Compare</button>
+          </form>
+          <div class="text-center mt-4" style="color:#888;font-size:0.95em;">
+              Example: <code>^GSPC,AAPL,MSFT,GOOG</code> &nbsp; | &nbsp; Days: <code>3650</code><br>
+              Following tickers can be put as 1st position for beta calculation.<br>
+              <code>^GSPC=S&P 500, ^IXIC=NASDAQ, ^DJI=Dow Jones, ^TWII=TAIEX</code>
+              
+          </div>
+      </div>
+  </body>
+  </html>
+  '''
+
+
+
+
+################################################################################################################################################################
+################################################################################################################################################################
+def get_expirations(ticker):
+  stock = yf.Ticker(ticker)
+  return stock.options
+
+
+
+
+################################################################################################################################################################
+def get_option_chain(ticker, expiration):
+  stock = yf.Ticker(ticker)
+  chain = stock.option_chain(expiration)
+
+  del stock
+  gc.collect()
+
+  return chain.calls, chain.puts
+
+
+
+
+################################################################################################################################################################
+def calculate_max_pain(calls, puts):
+  all_strikes = sorted(set(calls['strike']).union(set(puts['strike'])))
+  pain = {}
+
+  for strike in all_strikes:
+    total_loss = 0
+    for _, row in calls.iterrows():
+      if row['strike'] < strike:
+        loss = row['openInterest'] * (strike - row['strike'])
+        total_loss += loss
+    for _, row in puts.iterrows():
+      if row['strike'] > strike:
+        loss = row['openInterest'] * (row['strike'] - strike)
+        total_loss += loss
+    pain[strike] = total_loss
+
+  del all_strikes
+  gc.collect()
+
+  return min(pain, key=pain.get)
+
+
+
+
+################################################################################################################################################################
+def build_chart_option(calls, puts, ticker, max_pain, underlying_price):
+
+  df_calls = calls[['strike', 'openInterest']].dropna()
+  df_puts = puts[['strike', 'openInterest']].dropna()
+
+  # 計算選擇權賣方的總損失
+  strikes = sorted(set(df_calls['strike']).union(set(df_puts['strike'])))
+  strike_labels = [str(s) for s in strikes]
+
+  call_losses = []
+  put_losses = []
+  for expiry_price in strikes:
+    # 看漲選擇權損失：價內 (strike < expiry_price)
+    call_loss = df_calls[df_calls['strike'] < expiry_price].apply(
+        lambda r: (expiry_price - r['strike']) * r['openInterest'], axis=1).sum()
+    # 看跌選擇權損失：價內 (strike > expiry_price)
+    put_loss = df_puts[df_puts['strike'] > expiry_price].apply(
+        lambda r: (r['strike'] - expiry_price) * r['openInterest'], axis=1).sum()
+    call_losses.append(float(call_loss))
+    put_losses.append(float(put_loss))
+
+  """
+  mark_line = {
+      "symbol": ["none", "none"],
+      "label": {"formatter": "{b}: {c}", "position": "insideMiddle"},
+      "lineStyle": {"type": "dashed"},
+      "data": [
+          {"xAxis": str(max_pain), "name": "Max Pain", "lineStyle": {"color": "blue"}},
+          {"xAxis": str(round(underlying_price, 2)), "name": "Underlying", "lineStyle": {"color": "orange"}}
+      ]
+  }
+  """
+  mark_line = {
+    "symbol": ["none", "none"],
+    "label": {"formatter": "{b}: {c}", "position": "insideMiddle"},
+    "lineStyle": {"type": "dashed"},
+    "data": []
+  }
+
+  # 保證轉成字串
+  if max_pain is not None:
+    mark_line["data"].append({
+      "xAxis": str(max_pain),
+      "name": "Max Pain",
+      "lineStyle": {"color": "blue"}
+    })
+
+  if underlying_price is not None:
+    # 找到離 underlying_price 最近的 strike（讓 x 軸可以對得上）
+    closest_strike = min(strikes, key=lambda x: abs(x - underlying_price))
+    mark_line["data"].append({
+      "xAxis": str(closest_strike),
+      "name": "Underlying",
+      "lineStyle": {"color": "orange"}
+    })
+
+  # chart1：選擇權賣方的總損失
+  chart1 = {
+    "tooltip": {"trigger": "axis"},
+    "legend": {"data": ["Call Loss", "Put Loss"]},
+    "xAxis": {
+        "type": "category",
+        "data": strike_labels,
+        "name": "履約價",
+        "axisLabel": {"rotate": 45}
+    },
+    "yAxis": {
+        "type": "value",
+        "name": "Total Loss ($)",
+        "min": "dataMin",
+        "max": "dataMax"
+    },
+    "series": [
+        {"name": "Call Loss", "type": "bar", "data": call_losses, "itemStyle": {"color": "#d62728"}, "markLine": mark_line},
+        {"name": "Put Loss", "type": "bar", "data": put_losses, "itemStyle": {"color": "#2ca02c"}},
+    ]
+  }
+
+  # chart2：未平倉合約數 (維持不變)
+  call_oi = [int(df_calls.set_index('strike').openInterest.get(s, 0)) for s in strikes]
+  put_oi = [-int(df_puts.set_index('strike').openInterest.get(s, 0)) for s in strikes]
+
+  chart2 = {
+    "tooltip": {"trigger": "axis"},
+    "legend": {"data": ["Call OI", "Put OI"]},
+    "xAxis": {
+      "type": "category",
+      "data": strike_labels,
+      "name": "履約價",
+      "axisLabel": {"rotate": 45}
+    },
+    "yAxis": {
+      "type": "value",
+      "name": "Open Interest",
+      "min": "dataMin",
+      "max": "dataMax"
+    },
+    "series": [
+      {"name": "Call OI", "type": "bar", "stack": "x", "data": call_oi, "itemStyle": {"color": "#d62728"}, "markLine": mark_line},
+      {"name": "Put OI", "type": "bar", "stack": "x", "data": put_oi, "itemStyle": {"color": "#2ca02c"}},
+    ]
+  }
+
+  del call_losses, put_losses, call_oi, put_oi
+  gc.collect()
+
+  return json.dumps({"chart1": chart1, "chart2": chart2})
+
+
+
+
+################################################################################################################################################################
+@app.route('/maxpain/', methods=['GET', 'POST'])
+def maxpain():
+  ticker = ""
+  expirations = []
+  selected_exp = ""
+  max_pain = None
+  chart = None
+  error = None
+  underlying_price = None
+
+  if request.method == 'POST':
+    action = request.form.get('action')
+    ticker = request.form.get('ticker', '').upper()
+    selected_exp = request.form.get('expiration')
+
+    try:
+      if action == 'get_expirations':
+        expirations = get_expirations(ticker)
+
+      elif action == 'get_chart':
+        expirations = get_expirations(ticker)               
+        if not selected_exp:
+            raise ValueError("請選擇到期日")
+        calls, puts = get_option_chain(ticker, selected_exp)
+        max_pain = calculate_max_pain(calls, puts)
+        
+        hist = yf.Ticker(ticker).history(period="1d")
+        if hist.empty:
+            underlying_price = 0
+        else:
+            underlying_price = hist['Close'][-1]
+          
+        del hist
+        gc.collect()
+      
+        chart = build_chart_option(calls, puts, ticker, max_pain, underlying_price)
+
+    except Exception as e:
+      error = str(e)
+
+  print(f"max_pain_price = {max_pain}, underlying_price = {underlying_price}")
+
+  return render_template(
+    'maxpain.html',
+    ticker=ticker,
+    expirations=expirations,
+    selected_exp=selected_exp,
+    max_pain=max_pain,
+    underlying_price=underlying_price,
+    chart=chart,
+    error=error
+  )
 
 
 
