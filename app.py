@@ -493,7 +493,7 @@ csv table
         """
         print(prompt)
         print('----------------------------------------')
-        return "Hello World"
+
         if use_ollama == True:
           analysis = ollama_generate(prompt, model=ollama_model)
         else:
