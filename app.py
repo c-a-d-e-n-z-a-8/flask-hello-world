@@ -652,7 +652,7 @@ def generate_option_tabs(ticker: str):
         options["expiry"] = expiry
 
         # 過濾條件
-        options = options[(options["volume"] > 0) & (options["premium_est"] > 500_000)]
+        options = options[(options["volume"] > 0) & (options["premium_est"] > 200_000)]
         if options.empty:
             continue
 
