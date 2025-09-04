@@ -126,21 +126,22 @@ def fetch_tw_whale(ticker):
       r = requests.get(cm_url2, params=params, headers=headers, verify=False)
       if r.status_code == 200:
         cm_data = r.json()
-        records = [
-          {
-            "date": pd.to_datetime(c[0], unit='ms'),
-            "mf": c[8]["MfOvrBuy"] if c[8] else 0,
-            "mf_acc": c[8]["MfOvrBuySm"] if c[8] else 0,
-            "b_s": c[8]["BuyerSm"] if c[8] else 0,
-          }
-          for c in cm_data.get("DataLine", [])
-        ]
-
-        df_mf = pd.DataFrame.from_records(records).set_index("date")
-
-        df_mf_reset = df_mf.tail(BARS).reset_index()
-        df_mf_reset['date'] = df_mf_reset['date'].dt.strftime('%Y-%m-%d')
-        return_value = df_mf_reset.to_dict(orient='records')
+        if cm_data != None:
+          records = [
+            {
+              "date": pd.to_datetime(c[0], unit='ms'),
+              "mf": c[8]["MfOvrBuy"] if c[8] else 0,
+              "mf_acc": c[8]["MfOvrBuySm"] if c[8] else 0,
+              "b_s": c[8]["BuyerSm"] if c[8] else 0,
+            }
+            for c in cm_data.get("DataLine", [])
+          ]
+  
+          df_mf = pd.DataFrame.from_records(records).set_index("date")
+  
+          df_mf_reset = df_mf.tail(BARS).reset_index()
+          df_mf_reset['date'] = df_mf_reset['date'].dt.strftime('%Y-%m-%d')
+          return_value = df_mf_reset.to_dict(orient='records')
 
   return return_value
 
