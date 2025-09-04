@@ -222,12 +222,13 @@ def fetch_tw_financing_stats(ticker):
           data_list.append(json_data)
 
       dfs = [pd.DataFrame(l, columns=['date', col_list[i]]).set_index('date') for i, l in enumerate(data_list)]
-      df = pd.concat(dfs, axis=1)
-      df.index = pd.to_datetime(df.index, unit='ms').strftime('%Y-%m-%d')
-      df.rename(columns={"'融資餘額(張)'": "BB", "'融券餘額(張)'": "SB", "'借券賣出餘額(張)'": "LSB"}, inplace=True)
-
-      df_reset = df.tail(BARS).reset_index()
-      return_value = df_reset.to_dict(orient='records')
+      if len(dfs) == 3:
+        df = pd.concat(dfs, axis=1)
+        df.index = pd.to_datetime(df.index, unit='ms').strftime('%Y-%m-%d')
+        df.rename(columns={"'融資餘額(張)'": "BB", "'融券餘額(張)'": "SB", "'借券賣出餘額(張)'": "LSB"}, inplace=True)
+  
+        df_reset = df.tail(BARS).reset_index()
+        return_value = df_reset.to_dict(orient='records')
 
   return return_value
 
