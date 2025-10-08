@@ -559,7 +559,7 @@ csv table
 
 ################################################################################################################################################################
 @app.route('/suityourself/', methods=['GET', 'POST'])
-def gemini_analysis():
+def gemini_analysis_user():
     gc.collect()
     analysis = None
     error = None
