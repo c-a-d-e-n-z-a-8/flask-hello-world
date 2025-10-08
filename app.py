@@ -275,7 +275,7 @@ def fetch_stock_data(ticker):
 
   hist['10MA'] = talib.SMA(hist[close], timeperiod=10)
   hist['20MA'] = talib.SMA(hist[close], timeperiod=20)
-  hist['60MA'] = talib.SMA(hist[close], timeperiod=60)
+  #hist['60MA'] = talib.SMA(hist[close], timeperiod=60)
   hist['200MA'] = talib.SMA(hist[close], timeperiod=200)  
   hist['BBU'], hist['60MA'], hist['BBD'] = talib.BBANDS(hist[close].values, timeperiod=60, nbdevup=2, nbdevdn=2, matype=MA_TYPE)    
   hist['RSI'] = talib.RSI(hist[close], timeperiod=14)
