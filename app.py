@@ -1492,7 +1492,7 @@ def analyze():
 
   try:
     # 5. 發送請求
-    response = requests.post(url, headers=headers, data=json.dumps(payload))
+    response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=600)
     
     # 6. 錯誤處理
     if response.status_code != 200:
