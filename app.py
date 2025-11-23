@@ -390,13 +390,19 @@ def gemini_generate_content(prompt, model_name, api_key):
   }
   data = {
     "contents": [
-        {
-            "parts": [
-                {"text": prompt}
-            ]
-        }
+       {
+         "parts": [
+           {"text": prompt}
+         ]
+       }
+    ],
+    "tools": [
+       {
+         "google_search": {}
+       }
     ]
   }
+  
   response = requests.post(url, headers=headers, json=data, timeout=600)
   if response.status_code == 200:
     result = response.json()
