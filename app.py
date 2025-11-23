@@ -1383,5 +1383,154 @@ def maxpain():
 
 ################################################################################################################################################################
 ################################################################################################################################################################
+@app.route('/tgs/')
+def index():
+  return render_template('tgs.html')
+
+
+
+
+################################################################################################################################################################
+@app.route('/tgs_analyze', methods=['POST'])
+def analyze():
+  data = request.form
+  
+  # 1. 獲取參數
+  user_api_key = data.get('api_key')
+  selected_model = data.get('model_name')
+
+  if not user_api_key:
+    return jsonify({'success': False, 'error': '請輸入有效的 Gemini API Key'})
+  
+  # 3. 獲取策略參數
+  company_name = data.get('company_name')
+  context_structure = data.get('context_structure')
+  context_drivers = data.get('context_drivers')
+  context_uncertainty = data.get('context_uncertainty')
+  boundary_conditions = data.get('boundary_conditions')
+
+  # 4. Prompt (邏輯不變，維持 3C 架構)
+  prompt = f"""
+  你現在是精通李吉仁教授《轉型再成長》一書的首席策略顧問。
+  你的任務是為 **「{company_name}」** 這家公司進行深度的策略規劃。
+  請使用你的 Google Search 搜尋能力，先對該公司做深度研究，再依據 **Context (環境脈絡)、Change (策略改變)、Choice (策略選擇)** 的 3C 架構進行分析。
+  
+  *** 深度研究指令 (Deep Research Instructions) ***
+  1.  **廣泛搜尋**：請不要只進行一次搜尋。請利用 Google Search 工具，針對該公司的「財務報表」、「競爭對手動態」、「產業分析報告」與「最新新聞」進行多角度的資料檢索。
+  2.  **數據支撐**：分析時，請務必引用具體的數字（如營收成長率、毛利率變化、市佔率）來支持你的論點。
+  3.  **交叉比對**：請結合搜尋到的外部客觀數據，與使用者提供的內部 Context 進行交叉比對。
+  
+  **使用者輸入 (Context)：**
+  1. 目標公司：{company_name}
+  2. 產業結構與改變脈絡: {context_structure}
+  3. 未來成長驅動因子: {context_drivers}
+  4. 不確定因素與可變性: {context_uncertainty}
+  5. 邊界條件: {boundary_conditions}
+
+  ---
+  **任務執行步驟：**
+
+  ### 第一部分：財務與成長動力掃描 (基於搜尋結果)
+  請搜尋 **{company_name}** 過去五年的財務報表與新聞，簡要分析：
+  * **營收與獲利趨勢：** (近五年是成長、持平還是衰退？)
+  * **主要成長/衰退原因：** (市場因素或競爭因素？)
+  * **現有核心動力：** (目前是靠什麼賺錢？)
+  
+  ### 第二部分：3C 策略架構分析
+  基於上述財務背景與使用者的輸入，進行 Context, Change, Choice 分析：
+  
+  **Module 1: Context 情境洞察**
+  * 根據使用者輸入，辨識成長機會與形成成長機會的結構性脈絡，同時理解未來可能的風險，作為後續成長方向與路徑選擇的依據。
+  
+  **Module 2: Change 變革核心**
+  * 基於**改變以創造未來**的核心概念，建立想要改變的方向：建立事業新願景，提升價值定位，建構新競爭優勢。
+
+  **Module 3: Choice 策略選擇**
+  * 首先根據使用者輸入內容，分析**企業核心能力**
+  * 根據**由內而外**與**由外而內**的兩種策略思維，結合**企業核心能力**，回答以下的關鍵問題 ：產品市場選擇，商業模式選擇，成長模式選擇 (外部併購、內部發展、策略性外包、切割獨立)。
+
+  ### 第三部分：轉型再成長的策略擬定
+  * 最後，根據第一部分的財務與成長動力掃描以及第二部分的3C策略架構分析，用**以終為始**的心智模式，分析企業領導人應該建立的企業願景。 
+  * 接下來，透過願景建立新的期望目標，盤點現狀與期望目標間的差距，發展關鍵路徑，幫此公司擬訂**轉型再成長**的策略。
+  """
+
+  """
+  # 2. 設定 Gemini
+  try:
+    genai.configure(api_key=user_api_key)
+    # 使用使用者選擇的模型
+    model = genai.GenerativeModel(selected_model)
+  except Exception as e:
+    return jsonify({'success': False, 'error': f'模型設定失敗: {str(e)}'})
+
+  try:
+    response = model.generate_content(prompt)
+    analysis_html = markdown.markdown(response.text, extensions=['fenced_code'])
+    #return jsonify({'success': True, 'content': analysis_html, 'raw_markdown': response.text})
+    return jsonify({'success': True, 'content': analysis_html})
+  except Exception as e:
+    return jsonify({'success': False, 'error': str(e)})
+  """
+  
+  url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={user_api_key}"
+  
+  headers = {
+    "Content-Type": "application/json"
+  }
+
+  # ★★★ 關鍵邏輯：根據模型版本切換工具名稱 ★★★
+  # Gemini 2.0 使用 "google_search"
+  tool_definition = {"google_search": {}}
+  payload = {
+    "contents": [{
+      "parts": [{"text": prompt}]
+    }],
+    "tools": [
+      tool_definition
+    ]
+  }
+
+  try:
+    # 5. 發送請求
+    response = requests.post(url, headers=headers, data=json.dumps(payload))
+    
+    # 6. 錯誤處理
+    if response.status_code != 200:
+      error_msg = f"API Error ({response.status_code}): {response.text}"
+      print(error_msg)
+      return jsonify({'success': False, 'error': error_msg})
+
+    # 7. 解析 JSON 回傳
+    result_json = response.json()
+    
+    # 檢查是否有候選回應
+    if 'candidates' not in result_json or not result_json['candidates']:
+      return jsonify({'success': False, 'error': 'AI 未回傳任何內容 (可能被安全機制阻擋)'})
+      
+    candidate = result_json['candidates'][0]
+    
+    # 提取文字內容
+    if 'content' in candidate and 'parts' in candidate['content']:
+      raw_text = candidate['content']['parts'][0]['text']
+      
+      # 轉換 Markdown
+      #analysis_html = markdown.markdown(raw_text, extensions=['fenced_code'])
+      #print(analysis_html)
+      
+      return jsonify({
+        'success': True, 
+        'raw_markdown': raw_text
+      })
+    else:
+       return jsonify({'success': False, 'error': '回傳格式異常，找不到 content parts'})
+
+  except Exception as e:
+    print(f"Server Error: {e}")
+    return jsonify({'success': False, 'error': f"伺服器內部錯誤: {str(e)}"})
+
+
+
+################################################################################################################################################################
+################################################################################################################################################################
 if __name__ == '__main__':
     app.run(debug=True)
