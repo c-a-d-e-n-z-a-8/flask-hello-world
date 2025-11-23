@@ -1478,10 +1478,11 @@ def analyze():
     return jsonify({'success': False, 'error': str(e)})
   """
   
-  url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={user_api_key}"
+  url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent"
   
   headers = {
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "x-goog-api-key": user_api_key
   }
 
   # ★★★ 關鍵邏輯：根據模型版本切換工具名稱 ★★★
