@@ -592,7 +592,7 @@ def gemini_analysis_user():
     if request.method == 'POST':
         ticker = request.form.get('ticker', '').strip()
         additional_prompt = request.form.get('additional_prompt', '').strip()
-        model_name = request.form.get('model', 'gemini-2.5-flash')
+        model_name = request.form.get('model', 'gemini-2.5-pro')
         gemini_key = request.form.get('gemini_key', '').strip()
 
         if not ticker:
