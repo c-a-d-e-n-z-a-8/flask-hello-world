@@ -407,7 +407,24 @@ def gemini_generate_content(prompt, model_name, api_key):
   if response.status_code == 200:
     result = response.json()
     # 取出回應內容
-    return result['candidates'][0]['content']['parts'][0]['text']
+    #return result['candidates'][0]['content']['parts'][0]['text']
+    
+    # ★ 修正 2：整合所有 parts 的文字
+    try:
+      if 'candidates' in result and result['candidates']:
+          content = result['candidates'][0].get('content', {})
+          parts = content.get('parts', [])
+          
+          # 使用 join 將所有 part 的 text 串接起來
+          full_text = "".join([part.get('text', '') for part in parts])
+          
+          return full_text
+      else:
+          return "No candidates returned."
+            
+    except (KeyError, IndexError) as e:
+      return f"Error parsing response: {e}"
+  
   else:
     raise Exception(f"❌ Gemini API error: {response.status_code} {response.text}")
 
@@ -1523,7 +1540,11 @@ def analyze():
     
     # 提取文字內容
     if 'content' in candidate and 'parts' in candidate['content']:
-      raw_text = candidate['content']['parts'][0]['text']
+      parts = candidate['content']['parts']
+        
+      # 使用 List Comprehension 提取所有 part 的 text 並串接
+      # part.get('text', '') 確保萬一某個 part 沒有 text 欄位也不會報錯
+      raw_text = "".join([part.get('text', '') for part in parts])
       
       # 轉換 Markdown
       #analysis_html = markdown.markdown(raw_text, extensions=['fenced_code'])
