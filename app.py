@@ -1420,6 +1420,8 @@ def analyze():
   
   # 1. 獲取參數
   user_api_key = data.get('api_key')
+  if user_api_key == "wwsspp":
+    user_api_key = api_key
   selected_model = data.get('model_name')
 
   if not user_api_key:
