@@ -1836,7 +1836,7 @@ HTML_TEMPLATE = """
 
 ################################################################################################################################################################
 # --- Flask 路由 ---
-@app.route("/twheatmap")
+@app.route("/twheatmap/")
 def index():
   return render_template_string(HTML_TEMPLATE)
 
