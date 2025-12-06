@@ -1571,7 +1571,7 @@ def analyze():
 
 
 
-
+'''
 ################################################################################################################################################################
 ################################################################################################################################################################
 # --- 設定與常數 ---
@@ -1876,6 +1876,508 @@ def twheatmap_get_chart():
   # 將圖表轉換為 JSON 格式回傳給前端
   # 使用 plotly.utils.PlotlyJSONEncoder 確保格式正確
   return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+'''
+
+
+
+
+################################################################################################################################################################
+################################################################################################################################################################
+# --- 1. 設定與常數 ---
+TWSE_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0001"
+OTC_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0043"
+
+HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
+INDUSTRY_MAP = {
+  "01": "水泥工業", "02": "食品工業", "03": "塑膠工業", "04": "紡織纖維",
+  "05": "電機機械", "06": "電器電纜", "08": "玻璃陶瓷", "09": "造紙工業",
+  "10": "鋼鐵工業", "11": "橡膠工業", "12": "汽車工業", "14": "建材營造",
+  "15": "航運業", "16": "觀光餐旅", "17": "金融保險", "18": "貿易百貨",
+  "19": "綜合", "20": "其他", "21": "化學工業", "22": "生技醫療業",
+  "23": "油電燃氣業", "24": "半導體業", "25": "電腦及週邊設備業",
+  "26": "光電業", "27": "通信網路業", "28": "電子零組件業",
+  "29": "電子通路業", "30": "資訊服務業", "31": "其他電子業",
+  "32": "文化創意業", "33": "農業科技業", "34": "電子商務",
+  "35": "綠能環保", "36": "數位雲端", "37": "運動休閒",
+  "38": "居家生活", "80": "管理股票",
+}
+
+DATA_CACHE = {"twse": None, "otc": None, "last_update": 0}
+CACHE_DURATION = 300
+
+# --- 2. 資料處理函式 ---
+
+def industry_label(code) -> str:
+  if code is None: return "其他"
+  s = str(code).strip().zfill(2)
+  return INDUSTRY_MAP.get(s, "其他")
+
+def fetch_data_with_cache():
+  now = time.time()
+  if (DATA_CACHE["twse"] is None) or (now - DATA_CACHE["last_update"] > CACHE_DURATION):
+    try:
+      print(f"[{time.ctime()}] Updating Data from Fugle...")
+      r_twse = requests.get(TWSE_URL, headers=HEADERS, timeout=15)
+      r_otc = requests.get(OTC_URL, headers=HEADERS, timeout=15)
+      
+      if r_twse.status_code == 200:
+        DATA_CACHE["twse"] = pd.DataFrame(r_twse.json().get("data", []))
+      if r_otc.status_code == 200:
+        DATA_CACHE["otc"] = pd.DataFrame(r_otc.json().get("data", []))
+      DATA_CACHE["last_update"] = now
+    except Exception as e:
+      print(f"Error fetching data: {e}")
+
+def get_clean_dataframe(market):
+  fetch_data_with_cache()
+  df = DATA_CACHE["twse"] if market == "twse" else DATA_CACHE["otc"]
+  if df is None or df.empty:
+    return pd.DataFrame()
+  return df.copy()
+
+def build_data_for_frontend(df: pd.DataFrame, type_filter: str, area_metric: str):
+  if df.empty: return []
+
+  data = df[df["type"] == type_filter].copy()
+  if data.empty: return []
+
+  size_col = "tradeValue"
+  if type_filter == "EQUITY":
+    size_col = "marketValueWeight" if area_metric == "marketValueWeight" else "tradeValueWeight"
+
+  # 處理數值
+  raw_size = data.get(size_col, pd.Series([0]*len(data)))
+  if raw_size.dtype == 'object':
+    raw_size = raw_size.astype(str).str.replace(',', '')
+  
+  # 必填欄位
+  data["size_val"] = pd.to_numeric(raw_size, errors="coerce").fillna(0)
+  data["chg_pct"] = pd.to_numeric(data.get("changePercent"), errors="coerce").fillna(0)
+  data["price"] = pd.to_numeric(data.get("closePrice"), errors="coerce").fillna(0)
+  
+  # 新增欄位
+  data["open"] = pd.to_numeric(data.get("openPrice"), errors="coerce").fillna(0)
+  data["high"] = pd.to_numeric(data.get("highPrice"), errors="coerce").fillna(0)
+  data["low"] = pd.to_numeric(data.get("lowPrice"), errors="coerce").fillna(0)
+  data["change_val"] = pd.to_numeric(data.get("change"), errors="coerce").fillna(0)
+  data["vol"] = pd.to_numeric(data.get("tradeVolume"), errors="coerce").fillna(0)
+  data["val"] = pd.to_numeric(data.get("tradeValue"), errors="coerce").fillna(0)
+
+  data = data[data["size_val"] > 0]
+
+  tree_data = []
+
+  # [0:面積, 1:顏色%, 2:收盤, 3:顯示權重, 4:開盤, 5:最高, 6:最低, 7:漲跌, 8:成交量, 9:成交值]
+  def get_value_array(row):
+    return [
+      row["size_val"],  # 0
+      row["chg_pct"],   # 1
+      row["price"],   # 2
+      row["size_val"],  # 3
+      row["open"],    # 4
+      row["high"],    # 5
+      row["low"],     # 6
+      row["change_val"],# 7
+      row["vol"],     # 8
+      row["val"]    # 9
+    ]
+
+  if type_filter == "INDEX":
+    for _, row in data.iterrows():
+      tree_data.append({
+        "name": row["name"],
+        "value": get_value_array(row)
+      })
+  else:
+    # 個股
+    data["industry_name"] = data["industry"].apply(industry_label)
+    grouped = data.groupby("industry_name")
+    
+    for industry, group in grouped:
+      children = []
+      for _, row in group.iterrows():
+        children.append({
+          "name": row['name'],
+          "value": get_value_array(row),
+          "id": row["symbol"]
+        })
+      
+      tree_data.append({
+        "name": industry,
+        "children": children
+      })
+
+  return tree_data
+
+# --- 3. HTML 模板 ---
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>台股熱力圖 (Interactive)</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <style>
+    body { 
+      font-family: san-serif;
+      font-size: 16px;
+      padding: 20px; 
+      background-color: #f5f5f5; 
+      color: #000;
+      margin: 0;
+    }
+    .controls { 
+      background: #fff; 
+      padding: 15px 20px; 
+      border-radius: 10px; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+      margin-bottom: 10px; 
+    }
+    
+    /* --- 新增：標題列排版 --- */
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    
+    /* --- 新增：設定與按鈕的並排容器 --- */
+    .control-row {
+      display: flex;
+      justify-content: space-between; /* 左右推開 */
+      align-items: center;            /* 垂直置中 */
+      flex-wrap: wrap;                /* 視窗太窄時自動換行 */
+      gap: 15px;
+    }
+
+    /* --- 新增：左側選項群組 --- */
+    .left-options {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    /* --- 修改：右側 Tab 按鈕區 --- */
+    .tabs { 
+      display: flex; 
+      gap: 10px; 
+      border-bottom: none; /* 移除原本的底線 */
+      margin-top: 0;       /* 移除上距 */
+      padding-bottom: 0;
+    }
+    
+    .tab-btn { 
+      padding: 8px 20px; 
+      cursor: pointer; 
+      border: 1px solid #ddd; 
+      background: #fff; 
+      border-radius: 20px; 
+      font-family: 'Noto Serif JP', serif; 
+      transition: all 0.2s; 
+      color: #000;
+      font-weight: bold;
+    }
+    .tab-btn:hover { background: #f0f0f0; border-color: #ccc; }
+    .tab-btn.active { background-color: #333; color: #fff; border-color: #333; }
+    
+    #chart-container { width: 100%; height: 900px; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .loading { color: #666; font-style: italic; display: none; margin-left: 10px; font-size: 14px;}
+    .hint { font-size: 14px; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <div class="header-row">
+        <h2 style="margin:0">Taiwan Stock Heatmap</h2>
+        <span id="loading-msg" class="loading">數據更新中...</span>
+    </div>
+
+    <div class="control-row">
+      <div class="tabs">
+        <button class="tab-btn active" data-market="twse" data-type="INDEX">上市指數</button>
+        <button class="tab-btn" data-market="twse" data-type="EQUITY">上市個股</button>
+        <button class="tab-btn" data-market="otc" data-type="INDEX">上櫃指數</button>
+        <button class="tab-btn" data-market="otc" data-type="EQUITY">上櫃個股</button>
+      </div>
+      <div class="left-options">
+        <div>
+          <strong>個股面積依據：</strong>
+          <label style="margin-right:10px; cursor:pointer;">
+            <input type="radio" name="area_metric" value="tradeValueWeight" checked> 成交值權重
+          </label>
+          <label style="cursor:pointer;">
+            <input type="radio" name="area_metric" value="marketValueWeight"> 市值權重
+          </label>
+        </div>
+        <div class="hint">💡 提示：滾輪可縮放檢視，每五分鐘自動更新</div>
+      </div>
+    </div>
+  </div>
+  
+  <div id="chart-container"></div>
+
+  <script>
+  let chartInstance = null;
+  let currentMarket = 'twse';
+  let currentType = 'INDEX';
+
+  function fmtNum(n) { if(n === undefined) return '0'; return n.toLocaleString('en-US'); }
+  function fmtFloat(n, d=2) { if(n === undefined) return '0.00'; return n.toFixed(d); }
+
+  // Tooltip
+  function tooltipFormatter(info) {
+    var val = info.data.value; 
+    if (!val) { val = info.value; } 
+
+    var titleSize = '18px';
+    var bodySize = '15px';
+    
+    var styleTitle = `font-family: Noto Serif JP; font-size:${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
+    var styleBody = `color:#000; font-size:${bodySize}; line-height:1.8;`;
+    var styleRow = 'display:flex; justify-content:space-between; min-width:200px;';
+
+    if (Array.isArray(val)) {
+      var name = info.name;
+      var chgPct = fmtFloat(val[1]);
+      var close = fmtFloat(val[2]);
+      var open = fmtFloat(val[4]);
+      var high = fmtFloat(val[5]);
+      var low = fmtFloat(val[6]);
+      var change = fmtFloat(val[7]);
+      var vol = fmtNum(val[8]);
+      var valMoney = fmtNum(val[9]);
+      
+      var chgColor = val[1] >= 0 ? '#ff3333' : '#00cc44'; 
+      var chgSign = val[1] >= 0 ? '+' : '';
+
+      var content = `
+        <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
+        <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
+        <div style="${styleRow}"><span>開盤價：</span><span>${open}</span></div>
+        <div style="${styleRow}"><span>最高價：</span><span>${high}</span></div>
+        <div style="${styleRow}"><span>最低價：</span><span>${low}</span></div>
+      `;
+
+      if (currentType === 'EQUITY') {
+        content += `
+          <hr style="margin:5px 0; border:0; border-top:1px dashed #ccc;">
+          <div style="${styleRow}"><span>成交量：</span><span>${vol}</span></div>
+          <div style="${styleRow}"><span>成交金額：</span><span>${valMoney}</span></div>
+        `;
+      }
+
+      return `<div style="${styleTitle}">${name}</div><div style="${styleBody}">${content}</div>`;
+    } else {
+      var displayVal = typeof val === 'number' ? val.toFixed(0) : 'N/A';
+      return `<div style="${styleTitle}">${info.name}</div><div style="${styleBody}">板塊總權重: ${displayVal}</div>`;
+    }
+  }
+
+  // Label Formatter (修正後版本)
+  function labelFormatter(params) {
+    if (Array.isArray(params.value)) {
+       // 確保變數存在
+       var symbol = params.data.id || ''; 
+       var price = '0.00';
+       var chg = '0.00%';
+
+       if (params.value[2] !== undefined) price = params.value[2].toFixed(2);
+       if (params.value[1] !== undefined) chg = params.value[1].toFixed(2) + '%';
+       
+       // 使用英文變數名，避免 ReferenceError
+       // ECharts rich text 格式: {styleName|text}
+       return '{name|' + params.name + '(' + symbol + ')}\\n{val|' + price + ' | ' + chg + '}';
+    }
+    return params.name;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    chartInstance = echarts.init(document.getElementById('chart-container'));
+
+    const buttons = document.querySelectorAll('.tab-btn');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        buttons.forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        currentMarket = e.target.dataset.market;
+        currentType = e.target.dataset.type;
+        updateChart();
+      });
+    });
+
+    document.querySelectorAll('input[name="area_metric"]').forEach(el => {
+      el.addEventListener('change', updateChart);
+    });
+    
+    window.addEventListener('resize', () => { if(chartInstance) chartInstance.resize(); });
+
+    updateChart();
+    setInterval(updateChart, 300000);
+  });
+
+  async function updateChart() {
+    const areaVal = document.querySelector('input[name="area_metric"]:checked').value;
+    const loadingMsg = document.getElementById('loading-msg');
+    
+    loadingMsg.style.display = 'inline-block';
+    if(chartInstance) chartInstance.showLoading({ color: '#000', textColor: '#000' });
+
+    try {
+      const url = `/twheatmap/api/data?market=${currentMarket}&type=${currentType}&area=${areaVal}`;
+      const res = await fetch(url);
+      const treeData = await res.json();
+      
+      chartInstance.hideLoading();
+
+      const levels = [
+        {
+          itemStyle: { 
+            borderColor: '#fff', 
+            borderWidth: 0, 
+            gapWidth: 0 
+          }
+        },
+        {
+          // 【Level 1: 產業】
+          colorSaturation: [0.35, 0.5],
+          itemStyle: { 
+            borderColor: '#555', 
+            borderWidth: 1, 
+            gapWidth: 2
+          },
+          upperLabel: {
+            show: true, 
+            height: 30,    
+            color: '#EEEEEE',
+            fontWeight: 'bold',
+            fontSize: 18,
+            position: 'inside',
+            padding: [5, 5]
+          }
+        },
+        {
+          // 【Level 2: 個股】
+          colorSaturation: [0.35, 0.5],
+          itemStyle: { 
+            borderColor: '#fff',
+            borderWidth: 1, 
+            gapWidth: 1 
+          },
+          label: {
+            show: true,
+            position: 'insideTopLeft',
+            color: '#000',
+            formatter: labelFormatter,
+            padding: [4, 4],
+            rich: {
+              name: {
+                fontSize: 16,
+                fontWeight: 'bold',
+                lineHeight: 22,
+                color: '#000'
+              },
+              val: {
+                fontSize: 14,
+                color: '#333',
+                lineHeight: 18
+              }
+            }
+          }
+        }
+      ];
+
+      const option = {
+        //title: {
+        //  text: (currentType==='INDEX'?'指數':'個股') + ' Treemap',
+        //  subtext: '面積：' + areaVal,
+        //  textStyle: { fontFamily: "Noto Serif JP", color: '#000', fontSize: 26 },
+        //  subtextStyle: { fontFamily: "Noto Serif JP", color: '#333' }
+        //},
+        tooltip: {
+          formatter: tooltipFormatter,
+          textStyle: { fontFamily: "Noto Serif JP", color: '#000' },
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          borderColor: '#ccc',
+          borderWidth: 1,
+          padding: 10
+        },
+        visualMap: {
+          type: 'continuous',
+          dimension: 1,
+          min: -10,
+          max: 10,
+          inRange: { color: ['#8ec98e', '#f7f09f', '#ea8685'] },
+          show: true,
+          textStyle: { color: '#000' }
+        },
+        series: [{
+          type: 'treemap',
+          data: treeData,
+          top: '0%',
+          bottom: '0%',
+          left: '0%',
+          right: '0%',
+          width: '100%',
+          height: '100%',
+          
+          // 顯示所有層級 (關鍵設定)
+          leafDepth: null, 
+          
+          roam: true,
+          levels: currentType === 'INDEX' ? [] : levels,
+          breadcrumb: { show: true },
+          
+          label: {
+            show: true,
+            position: 'inside',
+            formatter: '{b}',
+            fontFamily: "Noto Serif JP",
+            fontSize: 16,
+            color: '#000'
+          }
+        }]
+      };
+
+      chartInstance.setOption(option, true);
+      
+    } catch (err) {
+      console.error(err);
+      if(chartInstance) chartInstance.hideLoading();
+    } finally {
+      loadingMsg.style.display = 'none';
+    }
+  }
+  </script>
+</body>
+</html>
+"""
+
+
+
+
+# --- 4. Flask 路由 ---
+@app.route("/twheatmap/")
+def twheatmap_index():
+  return render_template_string(HTML_TEMPLATE)
+
+
+
+
+@app.route("/twheatmap/api/data")
+def twheatmap_api_data_only():
+  market = request.args.get("market", "twse")
+  type_filter = request.args.get("type", "INDEX")
+  area_metric = request.args.get("area", "tradeValueWeight")
+  
+  df = get_clean_dataframe(market)
+  data_list = build_data_for_frontend(df, type_filter, area_metric)
+  
+  return json.dumps(data_list)
 
 
 
