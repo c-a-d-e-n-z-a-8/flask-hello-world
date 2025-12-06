@@ -2069,7 +2069,7 @@ HTML_TEMPLATE = """
     .tab-btn:hover { background: #f0f0f0; border-color: #ccc; }
     .tab-btn.active { background-color: #333; color: #fff; border-color: #333; }
     
-    #chart-container { width: 100%; height: 800px; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    #chart-container { width: 100%; height: 700px; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
     .loading { color: #666; font-style: italic; display: none; margin-left: 10px; font-size: 14px;}
     .hint { font-size: 14px; color: #555; }
   </style>
@@ -2077,8 +2077,8 @@ HTML_TEMPLATE = """
 <body>
   <div class="controls">
     <div class="header-row">
-        <h2 style="margin:0">Taiwan Stock Heatmap</h2>
-        <span id="loading-msg" class="loading">數據更新中...</span>
+      <h2 style="margin:0">Taiwan Stock Heatmap</h2>
+      <span id="loading-msg" class="loading">數據更新中...</span>
     </div>
 
     <div class="control-row">
