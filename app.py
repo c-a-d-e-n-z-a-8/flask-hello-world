@@ -1693,22 +1693,6 @@ def build_treemap_figure(df: pd.DataFrame, type_filter: str, area_choice: str):
       
   # 注意：這裡將 DataFrame 轉為 numpy array 傳入 customdata，
   # Plotly JSON 序列化時需要確保數據格式乾淨
-  '''
-  fig.update_traces(
-    customdata=data[["closePrice", "changePercent"]].to_numpy(),
-    textinfo="none",
-    texttemplate="%{label}<br>%{customdata[0]:,.2f} | %{customdata[1]:+.2f}%",
-    hovertemplate=(
-      "<b>%{label}</b><br>"
-      "產業: %{currentPath}<br>"
-      "收盤: %{customdata[0]:,.2f}<br>"
-      "漲跌幅: %{customdata[1]:+.2f}%<br>"
-      f"面積({value_key}): %{{value:,.4f}}"
-      "<extra></extra>"
-    )
-  )
-  '''
-
   safe_custom_data = data[["closePrice", "changePercent", "group_label"]].fillna(0)
   fig.update_traces(
     #customdata=data[["closePrice", "changePercent", "group_label"]].to_numpy(),
