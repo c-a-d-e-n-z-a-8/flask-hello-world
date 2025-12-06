@@ -25,6 +25,12 @@ import numpy as np
 from pyecharts import options as opts
 from pyecharts.charts import Line
 
+import time
+import plotly.express as px
+import plotly
+
+
+
 
 # Initialization
 api_key = os.environ.get('API_KEY')
@@ -1562,6 +1568,303 @@ def analyze():
   except Exception as e:
     print(f"Server Error: {e}")
     return jsonify({'success': False, 'error': f"伺服器內部錯誤: {str(e)}"})
+
+
+
+
+################################################################################################################################################################
+################################################################################################################################################################
+# --- 設定與常數 ---
+TWSE_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0001"
+OTC_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0043"
+
+INDUSTRY_MAP = {
+  "01": "水泥工業", "02": "食品工業", "03": "塑膠工業", "04": "紡織纖維",
+  "05": "電機機械", "06": "電器電纜", "08": "玻璃陶瓷", "09": "造紙工業",
+  "10": "鋼鐵工業", "11": "橡膠工業", "12": "汽車工業", "14": "建材營造",
+  "15": "航運業", "16": "觀光餐旅", "17": "金融保險", "18": "貿易百貨",
+  "19": "綜合", "20": "其他", "21": "化學工業", "22": "生技醫療業",
+  "23": "油電燃氣業", "24": "半導體業", "25": "電腦及週邊設備業",
+  "26": "光電業", "27": "通信網路業", "28": "電子零組件業",
+  "29": "電子通路業", "30": "資訊服務業", "31": "其他電子業",
+  "32": "文化創意業", "33": "農業科技業", "34": "電子商務",
+  "35": "綠能環保", "36": "數位雲端", "37": "運動休閒",
+  "38": "居家生活", "80": "管理股票",
+}
+
+# --- 全域資料快取 (Server-side Caching) ---
+# 用於儲存資料，避免每次前端請求都打外部API，同時確保資料不超過5分鐘
+DATA_CACHE = {
+  "twse": None,
+  "otc": None,
+  "last_update": 0
+}
+CACHE_DURATION = 300  # 5分鐘 (秒)
+
+# --- 輔助函式 ---
+
+def industry_label(code) -> str:
+  if code is None:
+    return "未知產業"
+  s = str(code).strip()
+  if s.isdigit():
+    s = s.zfill(2)
+  return INDUSTRY_MAP.get(s, "未知產業")
+
+def fetch_data_with_cache():
+  """檢查快取，若過期則重新抓取資料"""
+  now = time.time()
+  # 如果資料是空的 或者 距離上次更新超過 5 分鐘
+  if (DATA_CACHE["twse"] is None) or (now - DATA_CACHE["last_update"] > CACHE_DURATION):
+    try:
+      print(f"[{time.ctime()}] Fetching new data from Fugle API...")
+      r_twse = requests.get(TWSE_URL, timeout=10)
+      r_otc = requests.get(OTC_URL, timeout=10)
+      
+      if r_twse.status_code == 200:
+        DATA_CACHE["twse"] = pd.DataFrame(r_twse.json().get("data", []))
+      if r_otc.status_code == 200:
+        DATA_CACHE["otc"] = pd.DataFrame(r_otc.json().get("data", []))
+        
+      DATA_CACHE["last_update"] = now
+    except Exception as e:
+      print(f"Error fetching data: {e}")
+      # 如果抓取失敗，暫時保持舊資料或回傳 None
+      pass
+
+def build_treemap_figure(df: pd.DataFrame, type_filter: str, area_choice: str):
+  """建立 Plotly 圖表物件 (邏輯同原 Dash 程式)"""
+  if df is None or df.empty:
+    return px.treemap(title="無資料或讀取失敗")
+
+  data = df[df["type"] == type_filter].copy()
+  
+  if data.empty:
+    # 空資料處理
+    return px.treemap(title=f"{type_filter} Treemap（資料為空）")
+
+  # 處理標籤與數值
+  if type_filter == "INDEX":
+    data["group_label"] = "各類指數"
+    data["label"] = data["name"]
+    value_key = "tradeValue"
+  else:
+    data["group_label"] = data["industry"].apply(industry_label)
+    data["label"] = data.apply(lambda r: f'{r["name"]}({r["symbol"]})', axis=1)
+    value_key = area_choice if area_choice in ("tradeValueWeight", "marketValueWeight") else "tradeValueWeight"
+
+  data["value"] = pd.to_numeric(data.get(value_key), errors="coerce")
+  data = data[data["value"].notna() & (data["value"] > 0)]
+  
+  # 再次檢查過濾後是否為空
+  if data.empty:
+     # 這裡簡化處理，若過濾後為空直接回傳空圖
+     return px.treemap(title=f"{type_filter} 無有效數據")
+
+  data["chg"] = pd.to_numeric(data.get("changePercent"), errors="coerce")
+
+  fig = px.treemap(
+    data,
+    path=["group_label", "label"],
+    values="value",
+    color="chg",
+    color_continuous_scale="RdYlGn_r",
+    color_continuous_midpoint=0
+  )
+
+  fig.update_traces(tiling=dict(packing="binary"))
+
+  # 處理 Hover 與 Text
+  for col in ("closePrice", "changePercent"):
+    if col not in data.columns:
+      data[col] = None
+      
+  # 注意：這裡將 DataFrame 轉為 numpy array 傳入 customdata，
+  # Plotly JSON 序列化時需要確保數據格式乾淨
+  '''
+  fig.update_traces(
+    customdata=data[["closePrice", "changePercent"]].to_numpy(),
+    textinfo="none",
+    texttemplate="%{label}<br>%{customdata[0]:,.2f} | %{customdata[1]:+.2f}%",
+    hovertemplate=(
+      "<b>%{label}</b><br>"
+      "產業: %{currentPath}<br>"
+      "收盤: %{customdata[0]:,.2f}<br>"
+      "漲跌幅: %{customdata[1]:+.2f}%<br>"
+      f"面積({value_key}): %{{value:,.4f}}"
+      "<extra></extra>"
+    )
+  )
+  '''
+  fig.update_traces(
+    customdata=data[["closePrice", "changePercent", "group_label"]].to_numpy(),
+    textinfo="none",
+    texttemplate=(
+      "<span style='font-size: 16px; font-weight:bold'>%{label}</span>"
+      "<br>"
+      "<span style='font-size: 12px'>%{customdata[0]:,.2f} | %{customdata[1]:+.2f}%</span>"
+    ),
+    hovertemplate=(
+      # 1. 股票名稱：用 span 包起來，設大一點 (24px)
+      "<span style='font-size: 16px; font-weight:bold'>%{label}</span><br>"
+      
+      # 2. 其他資訊：統一包在另一個 span 裡，或是每一行單獨設定 (這裡示範設為 16px)
+      "<span style='font-size: 16px'>"
+      "產業: %{customdata[2]}<br>"
+      "收盤: %{customdata[0]:,.2f}<br>"
+      "漲跌幅: %{customdata[1]:+.2f}%<br>"
+      f"面積({value_key}): %{{value:,.4f}}"
+      "</span>"
+      
+      # 3. 隱藏旁邊預設的標籤
+      "<extra></extra>"
+    )
+  )
+
+  fig.update_layout(
+    margin=dict(t=40, l=0, r=0, b=0),
+    coloraxis_colorbar=dict(title="漲跌幅(%)"),
+    height=900, # 高度交給前端 CSS 控制，但這裡給個預設
+    title=f"{'指數' if type_filter=='INDEX' else '股票'} Treemap（面積: {value_key}）"
+  )
+  return fig
+
+# --- HTML 模板 ---
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Taiwan Stock Heatmap</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background-color: #f9f9f9; }
+    .controls { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .tabs { display: flex; margin-bottom: 10px; border-bottom: 1px solid #ccc; }
+    .tab-btn { 
+      padding: 10px 20px; cursor: pointer; border: none; background: none; font-size: 16px; 
+      border-bottom: 3px solid transparent; transition: all 0.3s;
+    }
+    .tab-btn.active { border-bottom: 3px solid #007bff; color: #007bff; font-weight: bold; }
+    .tab-btn:hover { background-color: #f0f0f0; }
+    #chart-container { width: 100%; height: 100%; background: #fff; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .loading { color: #666; font-style: italic; margin-left: 10px; display: none;}
+  </style>
+</head>
+<body>
+
+  <h3>Taiwan Stock Heatmap</h3>
+  
+  <div class="controls">
+    <div style="margin-bottom: 15px;">
+      <label><strong>面積指標：</strong></label>
+      <label><input type="radio" name="area_metric" value="tradeValueWeight" checked> 成交值權重</label>
+      <label><input type="radio" name="area_metric" value="marketValueWeight"> 市值權重</label>
+      <span id="loading-msg" class="loading">更新數據中...</span>
+      <span style="float: right; font-size: 0.8em; color: #888;">每 5 分鐘自動更新</span>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('twse', 'INDEX', this)">上市指數</button>
+      <button class="tab-btn" onclick="switchTab('twse', 'EQUITY', this)">上市個股</button>
+      <button class="tab-btn" onclick="switchTab('otc', 'INDEX', this)">上櫃指數</button>
+      <button class="tab-btn" onclick="switchTab('otc', 'EQUITY', this)">上櫃個股</button>
+    </div>
+  </div>
+
+  <div id="chart-container"></div>
+
+  <script>
+    // 當前狀態
+    let currentMarket = 'twse';
+    let currentType = 'INDEX';
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+      updateChart();
+      
+      // 監聽 Radio Button 改變
+      document.querySelectorAll('input[name="area_metric"]').forEach(radio => {
+        radio.addEventListener('change', updateChart);
+      });
+
+      // 設定自動更新定時器 (5分鐘 = 300,000 毫秒)
+      setInterval(updateChart, 300000);
+    });
+
+    function switchTab(market, type, btnElement) {
+      // 更新狀態
+      currentMarket = market;
+      currentType = type;
+      
+      // 更新 UI 樣式
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btnElement.classList.add('active');
+      
+      // 重新抓取圖表
+      updateChart();
+    }
+
+    async function updateChart() {
+      const areaMetric = document.querySelector('input[name="area_metric"]:checked').value;
+      const loadingMsg = document.getElementById('loading-msg');
+      
+      loadingMsg.style.display = 'inline';
+
+      try {
+        // 呼叫 Flask API
+        const response = await fetch(`/api/get_chart?market=${currentMarket}&type=${currentType}&area=${areaMetric}`);
+        const graphJson = await response.json();
+        
+        // 使用 Plotly 繪圖
+        Plotly.newPlot('chart-container', graphJson.data, graphJson.layout, {responsive: true});
+      } catch (error) {
+        console.error("Error loading chart:", error);
+        document.getElementById('chart-container').innerHTML = "<p style='padding:20px'>載入失敗，請稍後再試。</p>";
+      } finally {
+        loadingMsg.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>
+"""
+
+
+
+
+################################################################################################################################################################
+# --- Flask 路由 ---
+@app.route("/twheatmap")
+def index():
+  return render_template_string(HTML_TEMPLATE)
+
+
+
+
+################################################################################################################################################################
+@app.route("/api/get_chart")
+def get_chart():
+  """API 端點：根據參數回傳 Plotly JSON"""
+  # 取得參數
+  market = request.args.get("market", "twse")  # twse 或 otc
+  type_filter = request.args.get("type", "INDEX") # INDEX 或 EQUITY
+  area_metric = request.args.get("area", "tradeValueWeight")
+
+  # 確保資料是最新的 (快取檢查)
+  fetch_data_with_cache()
+
+  # 選擇對應的 DataFrame
+  df = DATA_CACHE["twse"] if market == "twse" else DATA_CACHE["otc"]
+  
+  # 建立圖表
+  fig = build_treemap_figure(df, type_filter, area_metric)
+  
+  # 將圖表轉換為 JSON 格式回傳給前端
+  # 使用 plotly.utils.PlotlyJSONEncoder 確保格式正確
+  return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
 
 
 
