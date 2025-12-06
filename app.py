@@ -1844,7 +1844,7 @@ def twheatmap_index():
 
 
 ################################################################################################################################################################
-@app.route("twheatmap/api/get_chart")
+@app.route("/twheatmap/api/get_chart")
 def twheatmap_get_chart():
   """API 端點：根據參數回傳 Plotly JSON"""
   # 取得參數
