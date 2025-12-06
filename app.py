@@ -1769,7 +1769,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
   <div class="controls">
-    <div style="margin-bottom: 15px;">
+    <div style="margin-bottom: 5px;">
       <label><strong>面積指標：</strong></label>
       <label><input type="radio" name="area_metric" value="tradeValueWeight" checked> 成交值權重</label>
       <label><input type="radio" name="area_metric" value="marketValueWeight"> 市值權重</label>
