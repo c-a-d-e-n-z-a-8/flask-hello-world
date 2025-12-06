@@ -1739,7 +1739,7 @@ def build_treemap_figure(df: pd.DataFrame, type_filter: str, area_choice: str):
   fig.update_layout(
     margin=dict(t=40, l=0, r=0, b=0),
     coloraxis_colorbar=dict(title="漲跌幅(%)"),
-    height=900, # 高度交給前端 CSS 控制，但這裡給個預設
+    height=800, # 高度交給前端 CSS 控制，但這裡給個預設
     title=f"{'指數' if type_filter=='INDEX' else '股票'} Treemap（面積: {value_key}）"
   )
   return fig
@@ -1768,9 +1768,6 @@ HTML_TEMPLATE = """
   </style>
 </head>
 <body>
-
-  <h3>Taiwan Stock Heatmap</h3>
-  
   <div class="controls">
     <div style="margin-bottom: 15px;">
       <label><strong>面積指標：</strong></label>
