@@ -1814,7 +1814,7 @@ HTML_TEMPLATE = """
 
       try {
         // 呼叫 Flask API
-        const response = await fetch(`/api/get_chart?market=${currentMarket}&type=${currentType}&area=${areaMetric}`);
+        const response = await fetch(`/twheatmap/api/get_chart?market=${currentMarket}&type=${currentType}&area=${areaMetric}`);
         const graphJson = await response.json();
         
         // 使用 Plotly 繪圖
@@ -1837,15 +1837,15 @@ HTML_TEMPLATE = """
 ################################################################################################################################################################
 # --- Flask 路由 ---
 @app.route("/twheatmap/")
-def twheatmap():
+def twheatmap_index():
   return render_template_string(HTML_TEMPLATE)
 
 
 
 
 ################################################################################################################################################################
-@app.route("/api/get_chart")
-def get_chart():
+@app.route("twheatmap/api/get_chart")
+def twheatmap_get_chart():
   """API 端點：根據參數回傳 Plotly JSON"""
   # 取得參數
   market = request.args.get("market", "twse")  # twse 或 otc
