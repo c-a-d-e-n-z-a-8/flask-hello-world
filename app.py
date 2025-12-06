@@ -1601,8 +1601,9 @@ DATA_CACHE = {
 }
 CACHE_DURATION = 300  # 5分鐘 (秒)
 
-# --- 輔助函式 ---
 
+
+# --- 輔助函式 ---
 def industry_label(code) -> str:
   if code is None:
     return "未知產業"
@@ -1611,6 +1612,8 @@ def industry_label(code) -> str:
     s = s.zfill(2)
   return INDUSTRY_MAP.get(s, "未知產業")
 
+
+
 def fetch_data_with_cache():
   """檢查快取，若過期則重新抓取資料"""
   now = time.time()
@@ -1618,8 +1621,14 @@ def fetch_data_with_cache():
   if (DATA_CACHE["twse"] is None) or (now - DATA_CACHE["last_update"] > CACHE_DURATION):
     try:
       print(f"[{time.ctime()}] Fetching new data from Fugle API...")
-      r_twse = requests.get(TWSE_URL, timeout=10)
-      r_otc = requests.get(OTC_URL, timeout=10)
+      
+      # --- 新增 Headers 偽裝成瀏覽器 ---
+      headers = {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+      }
+      
+      r_twse = requests.get(TWSE_URL, headers=headers, timeout=10)
+      r_otc = requests.get(OTC_URL, headers=headers, timeout=10)
       
       if r_twse.status_code == 200:
         DATA_CACHE["twse"] = pd.DataFrame(r_twse.json().get("data", []))
@@ -1631,6 +1640,9 @@ def fetch_data_with_cache():
       print(f"Error fetching data: {e}")
       # 如果抓取失敗，暫時保持舊資料或回傳 None
       pass
+
+
+
 
 def build_treemap_figure(df: pd.DataFrame, type_filter: str, area_choice: str):
   """建立 Plotly 圖表物件 (邏輯同原 Dash 程式)"""
@@ -1696,8 +1708,11 @@ def build_treemap_figure(df: pd.DataFrame, type_filter: str, area_choice: str):
     )
   )
   '''
+
+  safe_custom_data = data[["closePrice", "changePercent", "group_label"]].fillna(0)
   fig.update_traces(
-    customdata=data[["closePrice", "changePercent", "group_label"]].to_numpy(),
+    #customdata=data[["closePrice", "changePercent", "group_label"]].to_numpy(),
+    customdata=safe_custom_data.values.tolist(),
     textinfo="none",
     texttemplate=(
       "<span style='font-size: 16px; font-weight:bold'>%{label}</span>"
