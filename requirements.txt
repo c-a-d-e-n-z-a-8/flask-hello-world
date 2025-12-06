@@ -5,4 +5,4 @@ yfinance
 google-generativeai
 Gunicorn
 pyecharts
-plotly
+plotly==5.21.0
