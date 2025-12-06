@@ -1754,11 +1754,11 @@ HTML_TEMPLATE = """
   <title>Taiwan Stock Heatmap</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 20px; background-color: #f9f9f9; }
-    .controls { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .tabs { display: flex; margin-bottom: 10px; border-bottom: 1px solid #ccc; }
+    body { font-family: sans-serif; padding: 10px; background-color: #f9f9f9; }
+    .controls { background: #fff; padding: 5px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .tabs { display: flex; margin-bottom: 5px; border-bottom: 1px solid #ccc; }
     .tab-btn { 
-      padding: 10px 20px; cursor: pointer; border: none; background: none; font-size: 16px; 
+      padding: 5px 10px; cursor: pointer; border: none; background: none; font-size: 16px; 
       border-bottom: 3px solid transparent; transition: all 0.3s;
     }
     .tab-btn.active { border-bottom: 3px solid #007bff; color: #007bff; font-weight: bold; }
