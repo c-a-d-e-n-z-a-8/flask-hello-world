@@ -1740,7 +1740,7 @@ def build_treemap_figure(df: pd.DataFrame, type_filter: str, area_choice: str):
     margin=dict(t=40, l=0, r=0, b=0),
     coloraxis_colorbar=dict(title="漲跌幅(%)"),
     height=800, # 高度交給前端 CSS 控制，但這裡給個預設
-    title=f"{'指數' if type_filter=='INDEX' else '股票'} Treemap（面積: {value_key}）"
+    #title=f"{'指數' if type_filter=='INDEX' else '股票'} Treemap（面積: {value_key}）"
   )
   return fig
 
