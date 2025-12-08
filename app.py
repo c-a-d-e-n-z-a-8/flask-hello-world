@@ -2160,7 +2160,7 @@ HTML_TEMPLATE = """
 
       return `<div style="${styleTitle}">${name}</div><div style="${styleBody}">${content}</div>`;
     } else {
-      var displayVal = typeof val === 'number' ? val.toFixed(0) : 'N/A';
+      var displayVal = typeof val === 'number' ? val.toFixed(2) : 'N/A';
       return `<div style="${styleTitle}">${info.name}</div><div style="${styleBody}">板塊總權重: ${displayVal}</div>`;
     }
   }
