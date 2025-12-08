@@ -1996,6 +1996,9 @@ def build_data_for_frontend(df: pd.DataFrame, type_filter: str, area_metric: str
 
   return tree_data
 
+
+
+
 # --- 3. HTML 模板 ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -2007,69 +2010,69 @@ HTML_TEMPLATE = """
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
   <style>
     body { 
-      font-family: san-serif;
-      font-size: 16px;
-      padding: 20px; 
-      background-color: #f5f5f5; 
-      color: #000;
-      margin: 0;
+        font-family: san-serif;
+        font-size: 16px;
+        padding: 20px; 
+        background-color: #f5f5f5; 
+        color: #000;
+        margin: 0;
     }
     .controls { 
-      background: #fff; 
-      padding: 15px 20px; 
-      border-radius: 10px; 
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
-      margin-bottom: 10px; 
+        background: #fff; 
+        padding: 15px 20px; 
+        border-radius: 10px; 
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+        margin-bottom: 10px; 
     }
     
     /* --- 新增：標題列排版 --- */
     .header-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
     }
     
     /* --- 新增：設定與按鈕的並排容器 --- */
     .control-row {
-      display: flex;
-      justify-content: space-between; /* 左右推開 */
-      align-items: center;            /* 垂直置中 */
-      flex-wrap: wrap;                /* 視窗太窄時自動換行 */
-      gap: 15px;
+        display: flex;
+        justify-content: space-between; /* 左右推開 */
+        align-items: center;            /* 垂直置中 */
+        flex-wrap: wrap;                /* 視窗太窄時自動換行 */
+        gap: 15px;
     }
 
     /* --- 新增：左側選項群組 --- */
     .left-options {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
     }
 
     /* --- 修改：右側 Tab 按鈕區 --- */
     .tabs { 
-      display: flex; 
-      gap: 10px; 
-      border-bottom: none; /* 移除原本的底線 */
-      margin-top: 0;       /* 移除上距 */
-      padding-bottom: 0;
+        display: flex; 
+        gap: 10px; 
+        border-bottom: none; /* 移除原本的底線 */
+        margin-top: 0;       /* 移除上距 */
+        padding-bottom: 0;
     }
     
     .tab-btn { 
-      padding: 8px 20px; 
-      cursor: pointer; 
-      border: 1px solid #ddd; 
-      background: #fff; 
-      border-radius: 20px; 
-      font-family: san-serif; 
-      transition: all 0.2s; 
-      color: #000;
-      font-weight: bold;
+        padding: 8px 20px; 
+        cursor: pointer; 
+        border: 1px solid #ddd; 
+        background: #fff; 
+        border-radius: 20px; 
+        font-family: 'san-serif'; 
+        transition: all 0.2s; 
+        color: #000;
+        font-weight: bold;
     }
     .tab-btn:hover { background: #f0f0f0; border-color: #ccc; }
     .tab-btn.active { background-color: #333; color: #fff; border-color: #333; }
     
-    #chart-container { width: 100%; height: 700px; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    #chart-container { width: 100%; height: 750px; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
     .loading { color: #666; font-style: italic; display: none; margin-left: 10px; font-size: 14px;}
     .hint { font-size: 14px; color: #555; }
   </style>
@@ -2077,29 +2080,29 @@ HTML_TEMPLATE = """
 <body>
   <div class="controls">
     <div class="header-row">
-      <h2 style="margin:0">Taiwan Stock Heatmap</h2>
-      <span id="loading-msg" class="loading">數據更新中...</span>
+        <h2 style="margin:0">Taiwan Stock Heatmap</h2>
+        <span id="loading-msg" class="loading">數據更新中...</span>
     </div>
 
     <div class="control-row">
-      <div class="tabs">
-        <button class="tab-btn active" data-market="twse" data-type="INDEX">上市指數</button>
-        <button class="tab-btn" data-market="twse" data-type="EQUITY">上市個股</button>
-        <button class="tab-btn" data-market="otc" data-type="INDEX">上櫃指數</button>
-        <button class="tab-btn" data-market="otc" data-type="EQUITY">上櫃個股</button>
-      </div>
-      <div class="left-options">
-        <div>
-          <strong>個股面積依據：</strong>
-          <label style="margin-right:10px; cursor:pointer;">
-            <input type="radio" name="area_metric" value="tradeValueWeight" checked> 成交值權重
-          </label>
-          <label style="cursor:pointer;">
-            <input type="radio" name="area_metric" value="marketValueWeight"> 市值權重
-          </label>
+        <div class="tabs">
+            <button class="tab-btn active" data-market="twse" data-type="INDEX">上市指數</button>
+            <button class="tab-btn" data-market="twse" data-type="EQUITY">上市個股</button>
+            <button class="tab-btn" data-market="otc" data-type="INDEX">上櫃指數</button>
+            <button class="tab-btn" data-market="otc" data-type="EQUITY">上櫃個股</button>
         </div>
-        <div class="hint">💡 提示：滾輪可縮放檢視，每五分鐘自動更新</div>
-      </div>
+        <div class="left-options">
+            <div>
+                <strong>個股面積依據：</strong>
+                <label style="margin-right:10px; cursor:pointer;">
+                    <input type="radio" name="area_metric" value="tradeValueWeight" checked> 成交值權重
+                </label>
+                <label style="cursor:pointer;">
+                    <input type="radio" name="area_metric" value="marketValueWeight"> 市值權重
+                </label>
+            </div>
+            <div class="hint">💡 提示：滾輪可縮放檢視，每五分鐘自動更新</div>
+        </div>
     </div>
   </div>
   
@@ -2119,9 +2122,9 @@ HTML_TEMPLATE = """
     if (!val) { val = info.value; } 
 
     var titleSize = '18px';
-    var bodySize = '15px';
+    var bodySize = '16px';
     
-    var styleTitle = `font-family: Noto Serif JP; font-size:${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
+    var styleTitle = `font-family: san-serif; font-size:${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
     var styleBody = `color:#000; font-size:${bodySize}; line-height:1.8;`;
     var styleRow = 'display:flex; justify-content:space-between; min-width:200px;';
 
@@ -2180,6 +2183,24 @@ HTML_TEMPLATE = """
     return params.name;
   }
 
+  // Label Formatter for Index(修正後版本)
+  function labelFormatterIndex(params) {
+    if (Array.isArray(params.value)) {
+       // 確保變數存在
+       var price = '0.00';
+       var chg = '0.00%';
+
+       if (params.value[2] !== undefined) price = params.value[2].toFixed(2);
+       if (params.value[1] !== undefined) chg = params.value[1].toFixed(2) + '%';
+       
+       // 使用英文變數名，避免 ReferenceError
+       // ECharts rich text 格式: {styleName|text}
+       return params.name + '\\n' + price + ' | ' + chg;
+    }
+    return params.name;
+  }
+  
+
   document.addEventListener('DOMContentLoaded', () => {
     chartInstance = echarts.init(document.getElementById('chart-container'));
 
@@ -2228,7 +2249,7 @@ HTML_TEMPLATE = """
         },
         {
           // 【Level 1: 產業】
-          colorSaturation: [0.35, 0.5],
+          colorSaturation: [0, 1],
           itemStyle: { 
             borderColor: '#555', 
             borderWidth: 1, 
@@ -2239,14 +2260,14 @@ HTML_TEMPLATE = """
             height: 30,    
             color: '#EEEEEE',
             fontWeight: 'bold',
-            fontSize: 18,
+            fontSize: 16,
             position: 'inside',
             padding: [5, 5]
           }
         },
         {
           // 【Level 2: 個股】
-          colorSaturation: [0.35, 0.5],
+          colorSaturation: [0, 1],
           itemStyle: { 
             borderColor: '#fff',
             borderWidth: 1, 
@@ -2279,12 +2300,12 @@ HTML_TEMPLATE = """
         //title: {
         //  text: (currentType==='INDEX'?'指數':'個股') + ' Treemap',
         //  subtext: '面積：' + areaVal,
-        //  textStyle: { fontFamily: "Noto Serif JP", color: '#000', fontSize: 26 },
-        //  subtextStyle: { fontFamily: "Noto Serif JP", color: '#333' }
+        //  textStyle: { fontFamily: "san-serif", color: '#000', fontSize: 26 },
+        //  subtextStyle: { fontFamily: "san-serif", color: '#333' }
         //},
         tooltip: {
           formatter: tooltipFormatter,
-          textStyle: { fontFamily: "Noto Serif JP", color: '#000' },
+          textStyle: { fontFamily: "san-serif", color: '#000' },
           backgroundColor: 'rgba(255, 255, 255, 0.95)',
           borderColor: '#ccc',
           borderWidth: 1,
@@ -2295,7 +2316,9 @@ HTML_TEMPLATE = """
           dimension: 1,
           min: -10,
           max: 10,
-          inRange: { color: ['#8ec98e', '#f7f09f', '#ea8685'] },
+          //inRange: { color: ['#8ec98e', '#f7f09f', '#ea8685'] },
+          //inRange: { color: ['#51c951', '#f7f09f', '#eb605e'] },
+          inRange: { color: ['#31C950', '#FFF085', '#FB2C36'] },
           show: true,
           textStyle: { color: '#000' }
         },
@@ -2319,8 +2342,8 @@ HTML_TEMPLATE = """
           label: {
             show: true,
             position: 'inside',
-            formatter: '{b}',
-            fontFamily: "Noto Serif JP",
+            formatter: labelFormatterIndex,
+            fontFamily: "san-serif",
             fontSize: 16,
             color: '#000'
           }
