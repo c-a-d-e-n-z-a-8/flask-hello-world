@@ -38,7 +38,8 @@ cm_url = os.environ.get('CM_URL')
 cm_url2 = os.environ.get('CM_URL2')
 si_url = os.environ.get('SI_URL')
 tw_sf_url = os.environ.get('TW_SF_URL')
-
+portfolio_url = os.environ.get('PORTFOLIO_URL')
+yahoo_url = os.environ.get('YAHOO_URL')
 
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
@@ -1571,307 +1572,19 @@ def analyze():
 
 
 
-'''
+
 ################################################################################################################################################################
 ################################################################################################################################################################
-# --- 設定與常數 ---
+# ==========================================
+# PART 1: Heatmap Logic
+# ==========================================
+
 TWSE_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0001"
 OTC_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0043"
 
-INDUSTRY_MAP = {
-  "01": "水泥工業", "02": "食品工業", "03": "塑膠工業", "04": "紡織纖維",
-  "05": "電機機械", "06": "電器電纜", "08": "玻璃陶瓷", "09": "造紙工業",
-  "10": "鋼鐵工業", "11": "橡膠工業", "12": "汽車工業", "14": "建材營造",
-  "15": "航運業", "16": "觀光餐旅", "17": "金融保險", "18": "貿易百貨",
-  "19": "綜合", "20": "其他", "21": "化學工業", "22": "生技醫療業",
-  "23": "油電燃氣業", "24": "半導體業", "25": "電腦及週邊設備業",
-  "26": "光電業", "27": "通信網路業", "28": "電子零組件業",
-  "29": "電子通路業", "30": "資訊服務業", "31": "其他電子業",
-  "32": "文化創意業", "33": "農業科技業", "34": "電子商務",
-  "35": "綠能環保", "36": "數位雲端", "37": "運動休閒",
-  "38": "居家生活", "80": "管理股票",
-}
+INDEX_LIST =  ["^TWII", "^TWOII", "00631L.TW", "^GSPC", "^RUT", "^N225", "^KS11", "VOO", "QQQ", "QLD", "000300.SS"]
 
-# --- 全域資料快取 (Server-side Caching) ---
-# 用於儲存資料，避免每次前端請求都打外部API，同時確保資料不超過5分鐘
-DATA_CACHE = {
-  "twse": None,
-  "otc": None,
-  "last_update": 0
-}
-CACHE_DURATION = 300  # 5分鐘 (秒)
-
-
-
-# --- 輔助函式 ---
-def industry_label(code) -> str:
-  if code is None:
-    return "未知產業"
-  s = str(code).strip()
-  if s.isdigit():
-    s = s.zfill(2)
-  return INDUSTRY_MAP.get(s, "未知產業")
-
-
-
-def fetch_data_with_cache():
-  """檢查快取，若過期則重新抓取資料"""
-  now = time.time()
-  # 如果資料是空的 或者 距離上次更新超過 5 分鐘
-  if (DATA_CACHE["twse"] is None) or (now - DATA_CACHE["last_update"] > CACHE_DURATION):
-    try:
-      print(f"[{time.ctime()}] Fetching new data from Fugle API...")
-      
-      # --- 新增 Headers 偽裝成瀏覽器 ---
-      headers = {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-      }
-      
-      r_twse = requests.get(TWSE_URL, headers=headers, timeout=10)
-      r_otc = requests.get(OTC_URL, headers=headers, timeout=10)
-      
-      if r_twse.status_code == 200:
-        DATA_CACHE["twse"] = pd.DataFrame(r_twse.json().get("data", []))
-      if r_otc.status_code == 200:
-        DATA_CACHE["otc"] = pd.DataFrame(r_otc.json().get("data", []))
-        
-      DATA_CACHE["last_update"] = now
-    except Exception as e:
-      print(f"Error fetching data: {e}")
-      # 如果抓取失敗，暫時保持舊資料或回傳 None
-      pass
-
-
-
-
-def build_treemap_figure(df: pd.DataFrame, type_filter: str, area_choice: str):
-  """建立 Plotly 圖表物件 (邏輯同原 Dash 程式)"""
-  if df is None or df.empty:
-    return px.treemap(title="無資料或讀取失敗")
-
-  data = df[df["type"] == type_filter].copy()
-  
-  if data.empty:
-    # 空資料處理
-    return px.treemap(title=f"{type_filter} Treemap（資料為空）")
-
-  # 處理標籤與數值
-  if type_filter == "INDEX":
-    data["group_label"] = "各類指數"
-    data["label"] = data["name"]
-    value_key = "tradeValue"
-  else:
-    data["group_label"] = data["industry"].apply(industry_label)
-    data["label"] = data.apply(lambda r: f'{r["name"]}({r["symbol"]})', axis=1)
-    value_key = area_choice if area_choice in ("tradeValueWeight", "marketValueWeight") else "tradeValueWeight"
-
-  data["value"] = pd.to_numeric(data.get(value_key), errors="coerce")
-  data = data[data["value"].notna() & (data["value"] > 0)]
-  
-  # 再次檢查過濾後是否為空
-  if data.empty:
-     # 這裡簡化處理，若過濾後為空直接回傳空圖
-     return px.treemap(title=f"{type_filter} 無有效數據")
-
-  data["chg"] = pd.to_numeric(data.get("changePercent"), errors="coerce")
-
-  fig = px.treemap(
-    data,
-    path=["group_label", "label"],
-    values="value",
-    color="chg",
-    color_continuous_scale="RdYlGn_r",
-    color_continuous_midpoint=0
-  )
-
-  fig.update_traces(tiling=dict(packing="binary"))
-
-  # 處理 Hover 與 Text
-  for col in ("closePrice", "changePercent"):
-    if col not in data.columns:
-      data[col] = None
-      
-  # 注意：這裡將 DataFrame 轉為 numpy array 傳入 customdata，
-  # Plotly JSON 序列化時需要確保數據格式乾淨
-  safe_custom_data = data[["closePrice", "changePercent", "group_label"]].fillna(0)
-  fig.update_traces(
-    #customdata=data[["closePrice", "changePercent", "group_label"]].to_numpy(),
-    customdata=safe_custom_data.values.tolist(),
-    textinfo="none",
-    texttemplate=(
-      "<span style='font-size: 16px; font-weight:bold'>%{label}</span>"
-      "<br>"
-      "<span style='font-size: 12px'>%{customdata[0]:,.2f} | %{customdata[1]:+.2f}%</span>"
-    ),
-    hovertemplate=(
-      # 1. 股票名稱：用 span 包起來，設大一點 (24px)
-      "<span style='font-size: 16px; font-weight:bold'>%{label}</span><br>"
-      
-      # 2. 其他資訊：統一包在另一個 span 裡，或是每一行單獨設定 (這裡示範設為 16px)
-      "<span style='font-size: 16px'>"
-      "產業: %{customdata[2]}<br>"
-      "收盤: %{customdata[0]:,.2f}<br>"
-      "漲跌幅: %{customdata[1]:+.2f}%<br>"
-      f"面積({value_key}): %{{value:,.4f}}"
-      "</span>"
-      
-      # 3. 隱藏旁邊預設的標籤
-      "<extra></extra>"
-    )
-  )
-
-  fig.update_layout(
-    margin=dict(t=40, l=0, r=0, b=0),
-    coloraxis_colorbar=dict(title="漲跌幅(%)"),
-    height=800, # 高度交給前端 CSS 控制，但這裡給個預設
-    #title=f"{'指數' if type_filter=='INDEX' else '股票'} Treemap（面積: {value_key}）"
-  )
-  return fig
-
-# --- HTML 模板 ---
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Taiwan Stock Heatmap</title>
-  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-  <style>
-    body { font-family: sans-serif; padding: 10px; background-color: #f9f9f9; }
-    .controls { background: #fff; padding: 5px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .tabs { display: flex; margin-bottom: 5px; border-bottom: 1px solid #ccc; }
-    .tab-btn { 
-      padding: 5px 10px; cursor: pointer; border: none; background: none; font-size: 16px; 
-      border-bottom: 3px solid transparent; transition: all 0.3s;
-    }
-    .tab-btn.active { border-bottom: 3px solid #007bff; color: #007bff; font-weight: bold; }
-    .tab-btn:hover { background-color: #f0f0f0; }
-    #chart-container { width: 100%; height: 100%; background: #fff; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    .loading { color: #666; font-style: italic; margin-left: 10px; display: none;}
-  </style>
-</head>
-<body>
-  <div class="controls">
-    <div style="margin-bottom: 5px;">
-      <label><strong>面積指標：</strong></label>
-      <label><input type="radio" name="area_metric" value="tradeValueWeight" checked> 成交值權重</label>
-      <label><input type="radio" name="area_metric" value="marketValueWeight"> 市值權重</label>
-      <span id="loading-msg" class="loading">更新數據中...</span>
-      <span style="float: right; font-size: 0.8em; color: #888;">每 5 分鐘自動更新</span>
-    </div>
-
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('twse', 'INDEX', this)">上市指數</button>
-      <button class="tab-btn" onclick="switchTab('twse', 'EQUITY', this)">上市個股</button>
-      <button class="tab-btn" onclick="switchTab('otc', 'INDEX', this)">上櫃指數</button>
-      <button class="tab-btn" onclick="switchTab('otc', 'EQUITY', this)">上櫃個股</button>
-    </div>
-  </div>
-
-  <div id="chart-container"></div>
-
-  <script>
-    // 當前狀態
-    let currentMarket = 'twse';
-    let currentType = 'INDEX';
-
-    // 初始化
-    document.addEventListener('DOMContentLoaded', () => {
-      updateChart();
-      
-      // 監聽 Radio Button 改變
-      document.querySelectorAll('input[name="area_metric"]').forEach(radio => {
-        radio.addEventListener('change', updateChart);
-      });
-
-      // 設定自動更新定時器 (5分鐘 = 300,000 毫秒)
-      setInterval(updateChart, 300000);
-    });
-
-    function switchTab(market, type, btnElement) {
-      // 更新狀態
-      currentMarket = market;
-      currentType = type;
-      
-      // 更新 UI 樣式
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      btnElement.classList.add('active');
-      
-      // 重新抓取圖表
-      updateChart();
-    }
-
-    async function updateChart() {
-      const areaMetric = document.querySelector('input[name="area_metric"]:checked').value;
-      const loadingMsg = document.getElementById('loading-msg');
-      
-      loadingMsg.style.display = 'inline';
-
-      try {
-        // 呼叫 Flask API
-        const response = await fetch(`/twheatmap/api/get_chart?market=${currentMarket}&type=${currentType}&area=${areaMetric}`);
-        const graphJson = await response.json();
-        
-        // 使用 Plotly 繪圖
-        Plotly.newPlot('chart-container', graphJson.data, graphJson.layout, {responsive: true});
-      } catch (error) {
-        console.error("Error loading chart:", error);
-        document.getElementById('chart-container').innerHTML = "<p style='padding:20px'>載入失敗，請稍後再試。</p>";
-      } finally {
-        loadingMsg.style.display = 'none';
-      }
-    }
-  </script>
-</body>
-</html>
-"""
-
-
-
-
-################################################################################################################################################################
-# --- Flask 路由 ---
-@app.route("/twheatmap/")
-def twheatmap_index():
-  return render_template_string(HTML_TEMPLATE)
-
-
-
-
-################################################################################################################################################################
-@app.route("/twheatmap/api/get_chart")
-def twheatmap_get_chart():
-  """API 端點：根據參數回傳 Plotly JSON"""
-  # 取得參數
-  market = request.args.get("market", "twse")  # twse 或 otc
-  type_filter = request.args.get("type", "INDEX") # INDEX 或 EQUITY
-  area_metric = request.args.get("area", "tradeValueWeight")
-
-  # 確保資料是最新的 (快取檢查)
-  fetch_data_with_cache()
-
-  # 選擇對應的 DataFrame
-  df = DATA_CACHE["twse"] if market == "twse" else DATA_CACHE["otc"]
-  
-  # 建立圖表
-  fig = build_treemap_figure(df, type_filter, area_metric)
-  
-  # 將圖表轉換為 JSON 格式回傳給前端
-  # 使用 plotly.utils.PlotlyJSONEncoder 確保格式正確
-  return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-'''
-
-
-
-
-################################################################################################################################################################
-################################################################################################################################################################
-# --- 1. 設定與常數 ---
-TWSE_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0001"
-OTC_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0043"
-
-HEADERS = {
+HEADERS_FUGLE = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
@@ -1889,60 +1602,86 @@ INDUSTRY_MAP = {
   "38": "居家生活", "80": "管理股票",
 }
 
+PTT_AUTHORS = ["sky22485816", "a000000000", "waitrop", "zmcx16", "Robertshih", "Test520", "zesonpso", "MrChen", "phcebus", "f204137", "a0808996", "IBIZA", "leo15824", "tosay", "LDPC", "nina801105", "mrp"]
+
 DATA_CACHE = {"twse": None, "otc": None, "last_update": 0}
 CACHE_DURATION = 300
 
-# --- 2. 資料處理函式 ---
+
+
 
 def industry_label(code) -> str:
   if code is None: return "其他"
   s = str(code).strip().zfill(2)
   return INDUSTRY_MAP.get(s, "其他")
 
-def fetch_data_with_cache():
+
+
+
+def fetch_heatmap_data():
   now = time.time()
   if (DATA_CACHE["twse"] is None) or (now - DATA_CACHE["last_update"] > CACHE_DURATION):
     try:
-      print(f"[{time.ctime()}] Updating Data from Fugle...")
-      r_twse = requests.get(TWSE_URL, headers=HEADERS, timeout=15)
-      r_otc = requests.get(OTC_URL, headers=HEADERS, timeout=15)
+      print(f"[{time.ctime()}] [DEBUG] Starting Fugle Heatmap Update...") 
+      r_twse = requests.get(TWSE_URL, headers=HEADERS_FUGLE, timeout=15)
+      r_otc = requests.get(OTC_URL, headers=HEADERS_FUGLE, timeout=15)
       
+      print(f"[DEBUG] Fugle Response - TWSE: {r_twse.status_code}, OTC: {r_otc.status_code}") # Check API Status
+
       if r_twse.status_code == 200:
-        DATA_CACHE["twse"] = pd.DataFrame(r_twse.json().get("data", []))
+        data_twse = r_twse.json().get("data", [])
+        DATA_CACHE["twse"] = pd.DataFrame(data_twse)
+        print(f"[DEBUG] TWSE Data loaded: {len(data_twse)} rows") # Check data size
+      
       if r_otc.status_code == 200:
-        DATA_CACHE["otc"] = pd.DataFrame(r_otc.json().get("data", []))
+        data_otc = r_otc.json().get("data", [])
+        DATA_CACHE["otc"] = pd.DataFrame(data_otc)
+        print(f"[DEBUG] OTC Data loaded: {len(data_otc)} rows") # Check data size
+
       DATA_CACHE["last_update"] = now
+      print(f"[{time.ctime()}] [DEBUG] Heatmap Cache Updated.")
     except Exception as e:
-      print(f"Error fetching data: {e}")
+      print(f"[ERROR] Fetching heatmap data failed: {e}")
+      traceback.print_exc() # Print full stack trace
+  else:
+      # print("[DEBUG] Using Cached Heatmap Data") # Optional: Uncomment if you want to know when cache is hit
+      pass
+
+
+
 
 def get_clean_dataframe(market):
-  fetch_data_with_cache()
+  fetch_heatmap_data()
   df = DATA_CACHE["twse"] if market == "twse" else DATA_CACHE["otc"]
   if df is None or df.empty:
+    print(f"[WARN] Dataframe for {market} is empty or None.")
     return pd.DataFrame()
   return df.copy()
 
-def build_data_for_frontend(df: pd.DataFrame, type_filter: str, area_metric: str):
+
+
+
+def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
   if df.empty: return []
 
   data = df[df["type"] == type_filter].copy()
-  if data.empty: return []
+  if data.empty: 
+      print(f"[DEBUG] No data found for type_filter: {type_filter}")
+      return []
 
   size_col = "tradeValue"
   if type_filter == "EQUITY":
     size_col = "marketValueWeight" if area_metric == "marketValueWeight" else "tradeValueWeight"
 
-  # 處理數值
+  # ... (Data conversion logic omitted for brevity, logic remains same) ...
   raw_size = data.get(size_col, pd.Series([0]*len(data)))
   if raw_size.dtype == 'object':
     raw_size = raw_size.astype(str).str.replace(',', '')
   
-  # 必填欄位
   data["size_val"] = pd.to_numeric(raw_size, errors="coerce").fillna(0)
   data["chg_pct"] = pd.to_numeric(data.get("changePercent"), errors="coerce").fillna(0)
   data["price"] = pd.to_numeric(data.get("closePrice"), errors="coerce").fillna(0)
   
-  # 新增欄位
   data["open"] = pd.to_numeric(data.get("openPrice"), errors="coerce").fillna(0)
   data["high"] = pd.to_numeric(data.get("highPrice"), errors="coerce").fillna(0)
   data["low"] = pd.to_numeric(data.get("lowPrice"), errors="coerce").fillna(0)
@@ -1951,415 +1690,1015 @@ def build_data_for_frontend(df: pd.DataFrame, type_filter: str, area_metric: str
   data["val"] = pd.to_numeric(data.get("tradeValue"), errors="coerce").fillna(0)
 
   data = data[data["size_val"] > 0]
+  
+  # print(f"[DEBUG] Building Heatmap: {type_filter}, Metric: {area_metric}, Count: {len(data)}") # Trace logic
 
   tree_data = []
 
-  # [0:面積, 1:顏色%, 2:收盤, 3:顯示權重, 4:開盤, 5:最高, 6:最低, 7:漲跌, 8:成交量, 9:成交值]
   def get_value_array(row):
     return [
-      row["size_val"],  # 0
-      row["chg_pct"],   # 1
-      row["price"],   # 2
-      row["size_val"],  # 3
-      row["open"],    # 4
-      row["high"],    # 5
-      row["low"],     # 6
-      row["change_val"],# 7
-      row["vol"],     # 8
-      row["val"]    # 9
+      row["size_val"], row["chg_pct"], row["price"], row["size_val"],
+      row["open"], row["high"], row["low"], row["change_val"], row["vol"], row["val"]
     ]
 
   if type_filter == "INDEX":
     for _, row in data.iterrows():
-      tree_data.append({
-        "name": row["name"],
-        "value": get_value_array(row)
-      })
+      tree_data.append({"name": row["name"], "value": get_value_array(row)})
   else:
-    # 個股
     data["industry_name"] = data["industry"].apply(industry_label)
     grouped = data.groupby("industry_name")
-    
     for industry, group in grouped:
       children = []
       for _, row in group.iterrows():
-        children.append({
-          "name": row['name'],
-          "value": get_value_array(row),
-          "id": row["symbol"]
-        })
-      
-      tree_data.append({
-        "name": industry,
-        "children": children
-      })
+        children.append({"name": row['name'], "value": get_value_array(row), "id": row["symbol"]})
+      tree_data.append({"name": industry, "children": children})
 
   return tree_data
 
+# ==========================================
+# PART 2: Yahoo Notify Logic
+# ==========================================
+class StockMonitor:
+  def __init__(self):
+    print("[DEBUG] Initializing StockMonitor...")
+    self.session = requests.Session(impersonate="chrome")
+    self.session.verify = False
+    
+    # Headers
+    self.headers = {
+      'authority': 'query1.finance.yahoo.com',
+      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'accept-language': 'zh-TW,zh-CN;q=0.9,zh;q=0.8,en-US;q=0.7,en;q=0.6',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
+    }
+    
+    # Initial Portfolio
+    self.portfolio = [
+      ["2454.TW", 820, 1200],
+      ["2317.TW", 102, 130],
+      ["3105.TWO", 195, 205],
+      ["4927.TW", 100, 110],
+      ["6706.TW", 157, 168]
+    ]
+    
+    # Indices for portfolio list
+    self.IDX_T = 0
+    self.IDX_F = 1
+    self.IDX_C = 2
+    self.IDX_P = 3
+    self.IDX_10MA = 4
+    self.IDX_200MA = 7
+    self.IDX_10MA_1 = 8
+    self.IDX_200MA_1 = 11
+
+    self.initialized = False
+    self.url_git_json = portfolio_url
+    
+    # Constants
+    self.DELTA_U = 0.01618
+    self.DELTA_D = -0.01618
+    self.DELTA_A = 0.00809  
+    self.DELTA_I_U   = 0.00618   # delta up for index
+    self.DELTA_I_D   = -0.00618  # delta down for index
+    self.DELTA_I_A   = 0.00382   # delta abs for index
+
+    
+    # === 新增：計數器與新聞快取 ===
+    self.run_count = 0
+    self.news_cache = []
+
+  def ma_calculation(self, ticker):
+    # print(f"[DEBUG] Calculating MA for {ticker[0]}...") # Optional trace
+    today = date.today()
+    startDate = today - timedelta(days=365)
+    endDate = today
+    startDate_epoch = int(datetime.datetime.combine(startDate, datetime.datetime.now().time()).timestamp())
+    endDate_epoch = int(datetime.datetime.combine(endDate, datetime.datetime.now().time()).timestamp())
+    crumb = "dx7e5yMCafJ"
+    
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker[0]}?period1={startDate_epoch}&period2={endDate_epoch}&interval=1d&events=history&includeAdjustedClose=true&events=div%2Csplits&crumb={crumb}"
+    
+    try:
+      r = self.session.get(url, headers=self.headers, timeout=10)
+      if r.status_code == 200:
+        data = r.json()
+        close = data["chart"]["result"][0]["indicators"]["adjclose"][0]["adjclose"]
+        if None in close: return [None]*9
+        
+        precision = 4 if close[-1] < 1 else 2
+        def safe_avg(lst): return round(sum(lst)/len(lst), precision) if lst else None
+
+        ma10 = safe_avg(close[-10:])
+        ma20 = safe_avg(close[-20:])
+        ma60 = safe_avg(close[-60:])
+        ma200 = safe_avg(close[-200:])
+        ma10_1 = safe_avg(close[-11:-1])
+        ma20_1 = safe_avg(close[-21:-1])
+        ma60_1 = safe_avg(close[-61:-1])
+        ma200_1 = safe_avg(close[-201:-1])
+        
+        return [None, ma10, ma20, ma60, ma200, ma10_1, ma20_1, ma60_1, ma200_1]
+      else:
+        print(f"[WARN] MA Fetch failed for {ticker[0]}, Status: {r.status_code}")
+    except Exception as e:
+      print(f"[ERROR] MA Calc Error {ticker[0]}: {e}")
+    return [None]*9
+
+  def init_portfolio(self):
+    print("[DEBUG] Fetching Portfolio JSON from GitHub...")
+    try:
+      r = self.session.get(self.url_git_json, headers=self.headers, timeout=5)
+      if r.status_code == 200:
+        json_git = r.json()
+        self.portfolio = json_git["portfolio"]
+        print(f"[DEBUG] Portfolio loaded from GitHub. Total items: {len(self.portfolio)}")
+      else:
+        print(f"[WARN] GitHub Portfolio fetch failed: {r.status_code}")
+    except Exception as e:
+      print(f"[ERROR] Init Portfolio failed: {e}")
+      pass
+
+    print("[DEBUG] Calculating missing MA data for portfolio...")
+    for p in self.portfolio:
+      if len(p) < 12:
+        ma = self.ma_calculation(p)
+        p.extend(ma)
+    self.initialized = True
+    print("[DEBUG] Portfolio Initialization Complete.")
+
+
+  def get_ptt_news(self, keywords):
+    news_list = []
+    # print(f"[DEBUG] Scraping PTT News for keywords: {keywords[:3]}...") # Trace
+    headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.170 Mobile Safari/537.36"}
+    url = 'https://www.ptt.cc/bbs/Stock/index.html'
+    try:
+      for i in range(5): # Print iteration
+        # print(f"  > PTT Page {i+1}, URL: {url}") 
+        r = requests.get(url, headers=headers, verify=False, cookies={'over18': '1'})
+        if r.status_code == 200:
+          soup = BS(r.text, 'html.parser')
+          articles = soup.select('div.r-ent')
+          paging = soup.select('div.btn-group-paging a')
+          url = 'https://www.ptt.cc' + paging[1]['href']
+
+          for a in articles:
+            element = a.contents[3]
+            if len(element.contents) < 2: continue
+            title = element.text.strip('\n')
+            
+            matched = False
+            for k in keywords:
+              if k in title:
+                matched = True
+                break
+            
+            nrec = a.contents[1].text
+            is_hot = (nrec == '爆') or (nrec.isdigit() and int(nrec) > 20)
+
+            if matched or is_hot:
+              link = 'https://www.ptt.cc' + element.contents[1]['href']
+              date = a.contents[5].contents[5].text
+              tag = f"🔥({nrec})" if is_hot else "👀"
+              news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+              
+          time.sleep(0.5)
+          
+    except Exception as e:
+      print(f"[ERROR] PTT News Error: {e}")
+      pass
+    return news_list
 
 
 
-# --- 3. HTML 模板 ---
+
+  def get_ptt_tickers(self, portfolio):
+    news_list = []
+    # print("[DEBUG] Scraping PTT for Tickers...")
+    headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.170 Mobile Safari/537.36"}
+    url = 'https://www.ptt.cc/bbs/Stock/index.html'
+
+    try:
+      for _ in range(5):
+        r = requests.get(url, verify=False, cookies={'over18': '1'})
+        if r.status_code == 200:
+          r.encoding = 'utf-8'
+
+          soup = BS(r.text, 'html.parser')
+
+          # Get article list in current page
+          articles = soup.select('div.r-ent')
+
+          # Find last page button
+          paging = soup.select('div.btn-group-paging a')
+
+          url = 'https://www.ptt.cc' + paging[1]['href']
+
+          for a in articles:
+            element = a.contents[3]
+
+            if len(element.contents) < 2:  # Handle deleted article
+              continue
+
+            title = element.text.strip('\n')
+
+            for p in portfolio:
+
+              symbol = p['symbol']
+              symbol_des = (p['symbolName'].split(' '))[0]
+
+              # Remove .TW or .TWO
+              idx = symbol.find('.')
+              if idx != -1:
+                ticker = symbol[:idx]
+              else:
+                ticker = symbol
+
+              if (ticker in title) or (symbol_des in title):
+                #print(f'  {ticker}/{symbol_des}: {title}')
+                link = 'https://www.ptt.cc' + element.contents[1]['href']
+                date = a.contents[5].contents[5].text
+              
+                tag = f"💲({ticker})"
+                news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+                
+          time.sleep(0.5)
+          
+    except Exception as e:
+      print(f"[ERROR] PTT Ticker Error: {e}")
+      pass
+    return news_list
+
+
+
+  
+  def get_ptt_authors(self, board, names):
+    news_list = []
+    # print(f"[DEBUG] Checking PTT Authors on {board}...")
+    headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.170 Mobile Safari/537.36"}
+    url = f'https://www.ptt.cc/bbs/{board}/index.html'
+    
+    try:
+      for _ in range(5):
+        r = requests.get(url, headers=headers, verify=False, cookies={'over18': '1'})
+        if r.status_code == 200:
+          r.encoding = 'utf-8'
+          
+          soup = BS(r.text, 'html.parser')
+
+          # Get article list in current page
+          articles = soup.select('div.r-ent')
+
+          # Find last page button
+          paging = soup.select('div.btn-group-paging a')
+
+          url = 'https://www.ptt.cc' + paging[1]['href']
+
+          for a in articles:
+            element = a.contents[3]
+
+            if len(element.contents) < 2:  # Handle deleted article
+              continue
+
+            title = element.text.strip('\n')     
+            meta = a.contents[5]
+            name = meta.contents[1].text
+
+            for n in names:
+
+              if n == name:
+                #print(f'  {k}/{symbol_des}: {title}')
+                link = 'https://www.ptt.cc' + element.contents[1]['href']
+                date = a.contents[5].contents[5].text
+                tag = f"👤({n})"
+                news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+
+          time.sleep(0.5)
+
+    except Exception as e:
+      print(f"[ERROR] PTT Author Error: {e}")
+      pass
+
+    # print(f"[DEBUG] Found {len(news_list)} author articles.")      
+    return news_list
+
+
+
+
+  def check_signals(self, p_idx, price, price_1):
+    # (Logic unchanged, omitted for brevity)
+    p = self.portfolio[p_idx]
+
+    # 取用欄位
+    ma10 = p[4]
+    ma20 = p[5]
+    ma60 = p[6]
+    ma200 = p[7]
+    ma10_1 = p[8]
+    ma20_1 = p[9]
+    ma60_1 = p[10]
+    ma200_1 = p[11]
+    price_low = p[1]
+    price_high = p[2]
+
+    symbol = p[0]
+    msgs = []
+
+    # 輔助函數:根據箭頭自動添加顏色 class
+    def styled_msg(text):
+      if '↑' in text:
+        return f'<span class="up">{text}</span>'
+      elif '↓' in text:
+        return f'<span class="down">{text}</span>'
+      elif '-Fall' in text:
+        return f'<span class="down">{text}</span>'
+      else:
+        return f'<span>{text}</span>'
+
+    # --------------------------
+    # 1. FLOOR / CEILING cross
+    # --------------------------
+    if price_low is not None:
+      if (price > price_low) and (price_1 <= price_low):
+        msgs.append(styled_msg(f"↑L({price_low})"))
+      if (price < price_low) and (price_1 >= price_low):
+        msgs.append(styled_msg(f"↓L({price_low})"))
+
+    if price_high is not None:
+      if (price > price_high) and (price_1 <= price_high):
+        msgs.append(styled_msg(f"↑H({price_high})"))
+      if (price < price_high) and (price_1 >= price_high):
+        msgs.append(styled_msg(f"↓H({price_high})"))
+
+    # --------------------------
+    # 2. SMA10 / SMA20 / SMA60 / SMA200 Trend Cross
+    # --------------------------
+    if ma10_1 is not None:
+      if (price > ma10) and (price_1 <= ma10_1):
+        msgs.append(styled_msg(f"↑MA10({ma10})"))
+      if (price < ma10) and (price_1 >= ma10_1):
+        text = f"↓MA10({ma10})"
+        if hasattr(self, "macd_w_is_fall"):
+          if symbol in self.macd_w_is_fall and self.macd_w_is_fall[symbol] is True:
+            text += " MACD-Fall"
+        msgs.append(styled_msg(text))
+
+    if ma20_1 is not None:
+      if (price > ma20) and (price_1 <= ma20_1):
+        msgs.append(styled_msg(f"↑MA20({ma20})"))
+      if (price < ma20) and (price_1 >= ma20_1):
+        text = f"↓MA20({ma20})"
+        if ma10 is not None and ma10 > ma20:
+          text += " JUMP-Fall"
+        msgs.append(styled_msg(text))
+
+    if ma60_1 is not None:
+      if (price > ma60) and (price_1 <= ma60_1):
+        msgs.append(styled_msg(f"↑MA60({ma60})"))
+      if (price < ma60) and (price_1 >= ma60_1):
+        msgs.append(styled_msg(f"↓MA60({ma60})"))
+
+    if ma200_1 is not None:
+      if (price > ma200) and (price_1 <= ma200_1):
+        msgs.append(styled_msg(f"↑MA200({ma200})"))
+      if (price < ma200) and (price_1 >= ma200_1):
+        msgs.append(styled_msg(f"↓MA200({ma200})"))
+
+    # --------------------------
+    # 3. SMA Crossing (MA10-20, MA20-60, MA10-60)
+    # --------------------------
+    if ma10_1 is not None and ma60_1 is not None:
+      if (ma10 > ma60) and (ma10_1 <= ma60_1):
+        msgs.append(styled_msg(f"MA10↑60({ma10},{ma60})"))
+      if (ma10 < ma60) and (ma10_1 >= ma60_1):
+        msgs.append(styled_msg(f"MA10↓60({ma10},{ma60})"))
+
+    if ma10_1 is not None and ma20_1 is not None:
+      if (ma10 > ma20) and (ma10_1 <= ma20_1):
+        msgs.append(styled_msg(f"MA10↑20({ma10},{ma20})"))
+      if (ma10 < ma20) and (ma10_1 >= ma20_1):
+        msgs.append(styled_msg(f"MA10↓20({ma10},{ma20})"))
+
+    if ma20_1 is not None and ma60_1 is not None:
+      if (ma20 > ma60) and (ma20_1 <= ma60_1):
+        msgs.append(styled_msg(f"MA20↑60({ma20},{ma60})"))
+      if (ma20 < ma60) and (ma20_1 >= ma60_1):
+        msgs.append(styled_msg(f"MA20↓60({ma20},{ma60})"))
+
+    # --------------------------
+    # 4. 回傳結果
+    # --------------------------
+    return " | ".join(msgs)
+
+    
+    
+
+  def run_check(self):
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [DEBUG] Starting Monitor run_check (Count: {self.run_count})")
+    if not self.initialized:
+      self.init_portfolio()
+
+    rows = []
+    ticker_news = []
+    
+    chunk_len = 20
+    for c in range(0, len(self.portfolio), chunk_len):
+      chunk = self.portfolio[c:c+chunk_len]
+      tickers = [p[0] for p in chunk]
+      tickers_url = ','.join(tickers)
+      url = yahoo_url + tickers_url
+      
+      # print(f"[DEBUG] Fetching chunk {c//chunk_len + 1} from Yahoo...") # Trace chunk
+      
+      try:
+        r = self.session.get(url, headers=self.headers, timeout=5)
+        if r.status_code == 200:
+          data = r.json()
+          
+          if self.run_count % 30 == 0:
+            print("[DEBUG] Fetching PTT Ticker News...")
+            ticker_news += self.get_ptt_tickers(data) 
+          
+          for item in data:
+            symbol = item['symbol']
+            if 'price' not in item or 'raw' not in item['price']: continue
+            
+            try:
+              price = float(item['price']['raw'])
+              price_1 = float(item.get('regularMarketPreviousClose', {}).get('raw', price))
+            except:
+              continue
+              
+            for i, p in enumerate(self.portfolio):
+              if p[0] == symbol:
+                name = item.get('symbolName', '').split(' ')[0]
+                change = item.get('changePercent', '0%')
+                
+                p_last = p[self.IDX_P]
+                if p_last is None: p[self.IDX_P] = price
+                
+                delta = 0
+                if p[self.IDX_P]:
+                  delta = (price - p[self.IDX_P]) / p[self.IDX_P]
+                  p[self.IDX_P] = price
+
+                # 1. 收集所有警示訊息到一個 List
+                alert_msgs = []
+
+                # A. 急劇變動
+                if symbol in INDEX_LIST: delta_a_judge = self.DELTA_I_A
+                else: delta_a_judge = self.DELTA_A
+                  
+                if abs(delta) > delta_a_judge:
+                  print(f"[ALERT] {symbol} {name} Delta: {delta:.4f}") # ALERT Debug
+                  if delta > 0: 
+                    alert_msgs.append(f'<span class="up">▲急拉 {delta*100:.2f}%</span>')
+                  else: 
+                    alert_msgs.append(f'<span class="down">▼急殺 {delta*100:.2f}%</span>')
+                    
+                # B. 支撐壓力
+                if p[self.IDX_F] and price < p[self.IDX_F]:
+                  alert_msgs.append(f'<span class="down">跌破 {p[self.IDX_F]}</span>')
+                if p[self.IDX_C] and price > p[self.IDX_C]:
+                  alert_msgs.append(f'<span class="up">突破 {p[self.IDX_C]}</span>')
+                
+                # C. 均線交叉
+                # cross_msg = self.check_signals(i, price, price_1)
+                # if cross_msg: alert_msgs.append(cross_msg)
+
+                # 2. 合併為字串 (移除隱藏邏輯，直接顯示)
+                display_alert = " ".join(alert_msgs)
+                additional_alert = self.check_signals(i, price, price_1)
+                
+                # 3. 組合最終 alert (用 <br> 分隔,不需要 alert_style 了)
+                final_alert = ""
+                if display_alert:
+                  final_alert = display_alert
+                if additional_alert:
+                  if final_alert:
+                    final_alert += "<br>" + additional_alert
+                  else:
+                    final_alert = additional_alert
+                
+                rows.append({
+                  "symbol": symbol,
+                  "name": name,
+                  "price": price,
+                  "change": change,
+                  "alert": final_alert,
+                  "delta": delta
+                })
+        else:
+           print(f"[WARN] Yahoo API Non-200 Status: {r.status_code}")
+      except Exception as e:
+        print(f"[ERROR] Yahoo Update error: {e}")
+        traceback.print_exc()
+        
+    # 排序但保留 delta
+    rows.sort(key=lambda x: abs(x.get('delta', 0)), reverse=True)
+    
+    keywords = [p[0].split('.')[0] for p in self.portfolio]
+
+    # 只有當計數器是 0 或 30 的倍數時，才真正去爬蟲
+    if self.run_count % 30 == 0:
+      print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [DEBUG] Updating PTT News (Keywords/Authors)...")
+      self.news_cache = ticker_news + self.get_ptt_news(keywords) +  self.get_ptt_authors("Stock", PTT_AUTHORS)
+      print(f"[DEBUG] Total News Found: {len(self.news_cache)}")
+    
+    self.run_count += 1
+    # === 修改結束 ===
+
+    return {
+      "timestamp": datetime.datetime.now().strftime('%H:%M:%S'),
+      "rows": rows,
+      "news": self.news_cache  # 這裡改成回傳 cache
+    }
+
+
+
+
+monitor = StockMonitor()
+
+# ==========================================
+# PART 3: Web Application
+# ==========================================
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>台股熱力圖 (Interactive)</title>
+  <title>Stock Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
   <style>
-    body { 
-        font-family: san-serif;
-        font-size: 16px;
-        padding: 20px; 
-        background-color: #f5f5f5; 
-        color: #000;
-        margin: 0;
-    }
-    .controls { 
-        background: #fff; 
-        padding: 15px 20px; 
-        border-radius: 10px; 
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
-        margin-bottom: 10px; 
-    }
-    
-    /* --- 新增：標題列排版 --- */
-    .header-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 10px;
-    }
-    
-    /* --- 新增：設定與按鈕的並排容器 --- */
-    .control-row {
-        display: flex;
-        justify-content: space-between; /* 左右推開 */
-        align-items: center;            /* 垂直置中 */
-        flex-wrap: wrap;                /* 視窗太窄時自動換行 */
-        gap: 15px;
-    }
+  body { background-color: #f8f9fa; margin: 0; padding: 0; overflow: hidden; }
+  .container-fluid { padding: 0 !important; margin: 0 !important; }
+  .row { margin: 0 !important; }
+  .col-lg-8 { padding: 0 !important; } 
+  .card { border: none; border-radius: 0; margin: 0; }
+  .card-body { padding: 0 !important; }
 
-    /* --- 新增：左側選項群組 --- */
-    .left-options {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-    }
+  .heatmap-header {
+    height: 50px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    gap: 15px;
+  }
+  #chart-container { 
+    width: 100%; 
+    height: calc(100vh - 50px); 
+  }
 
-    /* --- 修改：右側 Tab 按鈕區 --- */
-    .tabs { 
-        display: flex; 
-        gap: 10px; 
-        border-bottom: none; /* 移除原本的底線 */
-        margin-top: 0;       /* 移除上距 */
-        padding-bottom: 0;
-    }
-    
-    .tab-btn { 
-        padding: 8px 20px; 
-        cursor: pointer; 
-        border: 1px solid #ddd; 
-        background: #fff; 
-        border-radius: 20px; 
-        font-family: 'san-serif'; 
-        transition: all 0.2s; 
-        color: #000;
-        font-weight: bold;
-    }
-    .tab-btn:hover { background: #f0f0f0; border-color: #ccc; }
-    .tab-btn.active { background-color: #333; color: #fff; border-color: #333; }
-    
-    #chart-container { width: 100%; height: 750px; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .loading { color: #666; font-style: italic; display: none; margin-left: 10px; font-size: 14px;}
-    .hint { font-size: 14px; color: #555; }
+  .notify-panel { height: 100vh; overflow-y: auto; background: #fff; border-left: 2px solid #ddd; }
+  .control-bar { padding: 10px; background: #eee; border-bottom: 1px solid #ccc; font-size: 0.9rem; }
+  
+  /* 表格樣式 */
+  .table-custom { font-size: 0.9rem; width: 100%; margin-bottom: 0; }
+  .table-custom th { background-color: #343a40; color: #fff; padding: 8px; font-weight: normal; }
+  .table-custom td { padding: 8px; vertical-align: middle; border-bottom: 1px solid #eee; }
+  .table-custom tr:hover { background-color: #f1f1f1; }
+  
+  .news-item { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 0.85rem; line-height: 1.4; }
+  .up { color: #dc3545; font-weight: bold; }
+  .down { color: #198754; font-weight: bold; }
+  .neutral { color: #6c757d; font-weight: normal; }  /* 灰色,較淡 */
+  
+  /* 警示標籤 */
+  .alert-tag { font-size: 0.8rem; font-weight: bold; }
+  
+  /* Popup 容器 */
+  .stock-popup {
+    position: fixed;
+    display: none;
+    z-index: 9999;
+    background: white;
+    border: 2px solid #333;
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    pointer-events: none; /* 避免圖片擋住滑鼠事件 */
+  }
+
+  .stock-popup img {
+    display: block;
+    max-width: 800px;
+    max-height: 600px;
+    width: auto;
+    height: auto;
+  }
+
+  .stock-popup .loading {
+    padding: 20px;
+    text-align: center;
+    color: #666;
+  }
+
+  /* 股票代碼 hover 效果 */
+  .stock-symbol-hover {
+    cursor: pointer;
+    position: relative;
+  }
+
+  .stock-symbol-hover:hover {
+    background-color: #e3f2fd;
+  }
   </style>
 </head>
 <body>
-  <div class="controls">
-    <div class="header-row">
-        <h2 style="margin:0">Taiwan Stock Heatmap</h2>
-        <span id="loading-msg" class="loading">數據更新中...</span>
+
+<div class="container-fluid">
+  <div class="row">
+  <div class="col-lg-8">
+    <div class="heatmap-header">
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-dark active" onclick="setMarket(this, 'twse', 'INDEX')">上市指數</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'twse', 'EQUITY')">上市個股</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
+      </div>
+      <div style="font-size:14px;">
+        <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
+        <label class="ms-2" style="cursor:pointer"><input type="radio" name="area_metric" value="marketValueWeight" onchange="updateHeatmap()"> 市值</label>
+      </div>
+    </div>
+    <div id="chart-container"></div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="notify-panel">
+    
+    <div class="control-bar d-flex justify-content-between align-items-center">
+       <span class="fw-bold">Monitor System</span>
+       <span class="badge bg-secondary" id="nt-time">--:--</span>
+    </div>
+    
+    <div class="card">
+      <div class="card-body">
+         <table class="table-custom">
+            <thead>
+               <tr>
+                <th style="width: 20%">股票</th>
+                <th style="width: 15%">價/幅</th>
+                <th style="width: 15%">變動率</th>
+                <th style="width: 50%">警示</th>
+               </tr>
+            </thead>
+            <tbody id="stock-table-body">
+               <tr><td colspan="3" class="text-center text-muted">載入中...</td></tr>
+            </tbody>
+         </table>
+      </div>
     </div>
 
-    <div class="control-row">
-        <div class="tabs">
-            <button class="tab-btn active" data-market="twse" data-type="INDEX">上市指數</button>
-            <button class="tab-btn" data-market="twse" data-type="EQUITY">上市個股</button>
-            <button class="tab-btn" data-market="otc" data-type="INDEX">上櫃指數</button>
-            <button class="tab-btn" data-market="otc" data-type="EQUITY">上櫃個股</button>
-        </div>
-        <div class="left-options">
-            <div>
-                <strong>個股面積依據：</strong>
-                <label style="margin-right:10px; cursor:pointer;">
-                    <input type="radio" name="area_metric" value="tradeValueWeight" checked> 成交值權重
-                </label>
-                <label style="cursor:pointer;">
-                    <input type="radio" name="area_metric" value="marketValueWeight"> 市值權重
-                </label>
-            </div>
-            <div class="hint">💡 提示：滾輪可縮放檢視，每五分鐘自動更新</div>
-        </div>
+    <div class="card mt-2">
+      <div class="card-header bg-secondary text-white rounded-0" style="padding: 5px 10px; font-size: 0.9rem;">PTT Stock / News</div>
+      <div class="card-body" id="news-container">
+       <div class="text-center p-3 text-muted">載入中...</div>
+      </div>
+    </div>
+    
     </div>
   </div>
+  </div>
+</div>
+
+<script>
+let chartInstance = null;
+let currentMarket = 'twse';
+let currentType = 'INDEX';
+
+function fmtNum(n) { if(n === undefined) return '0'; return n.toLocaleString('en-US'); }
+function fmtFloat(n, d=2) { if(n === undefined) return '0.00'; return n.toFixed(d); }
+
+
+
+
+function setMarket(btn, market, type) {
+  document.querySelectorAll('.btn-group button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentMarket = market;
+  currentType = type;
+  updateHeatmap();
+}
+
+
+
+
+function tooltipFormatter(info) {
+  var val = info.data.value; 
+  if (!val) { val = info.value; } 
+  var titleSize = '18px';
+  var bodySize = '16px';
+  var styleTitle = `font-family: san-serif; font-size:${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
+  var styleBody = `color:#000; font-size:${bodySize}; line-height:1.8;`;
+  var styleRow = 'display:flex; justify-content:space-between; min-width:200px;';
+
+  if (Array.isArray(val)) {
+    var name = info.name;
+    var chgPct = fmtFloat(val[1]);
+    var close = fmtFloat(val[2]);
+    var open = fmtFloat(val[4]);
+    var high = fmtFloat(val[5]);
+    var low = fmtFloat(val[6]);
+    var change = fmtFloat(val[7]);
+    var vol = fmtNum(val[8]);
+    var valMoney = fmtNum(val[9]);
+    var chgColor = val[1] >= 0 ? '#ff3333' : '#00cc44'; 
+    var chgSign = val[1] >= 0 ? '+' : '';
+    var content = `
+    <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
+    <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
+    <div style="${styleRow}"><span>開盤價：</span><span>${open}</span></div>
+    <div style="${styleRow}"><span>最高價：</span><span>${high}</span></div>
+    <div style="${styleRow}"><span>最低價：</span><span>${low}</span></div>
+    `;
+    if (currentType === 'EQUITY') {
+    content += `
+      <hr style="margin:5px 0; border:0; border-top:1px dashed #ccc;">
+      <div style="${styleRow}"><span>成交量：</span><span>${vol}</span></div>
+      <div style="${styleRow}"><span>成交金額：</span><span>${valMoney}</span></div>
+    `;
+    }
+    return `<div style="${styleTitle}">${name}</div><div style="${styleBody}">${content}</div>`;
+  } else {
+    var displayVal = typeof val === 'number' ? val.toFixed(2) : 'N/A';
+    return `<div style="${styleTitle}">${info.name}</div><div style="${styleBody}">板塊總權重: ${displayVal}</div>`;
+  }
+}
+
+
+
+
+function labelFormatterIndex(params) {
+  if (Array.isArray(params.value)) {
+  var price = params.value[2] ? params.value[2].toFixed(2) : '0.00';
+  var chg = params.value[1] ? params.value[1].toFixed(2) + '%' : '0.00%';
+  return params.name + '\\n' + price + ' | ' + chg;
+  }
+  return params.name;
+}
+
+
+
+
+function labelFormatter(params) {
+  if (Array.isArray(params.value)) {
+  var symbol = params.data.id || ''; 
+  var price = params.value[2] ? params.value[2].toFixed(2) : '0.00';
+  var chg = params.value[1] ? params.value[1].toFixed(2) + '%' : '0.00%';
+  return '{name|' + params.name + '(' + symbol + ')}\\n{val|' + price + ' | ' + chg + '}';
+  }
+  return params.name;
+}
+
+
+
+
+// 檢查是否在交易時間內(含週末判斷)
+function isTwTradingHours() {
+  const now = new Date();
+  // 轉換為台北時間 (UTC+8)
+  const taipeiTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
   
-  <div id="chart-container"></div>
+  const hours = taipeiTime.getHours();
+  const minutes = taipeiTime.getMinutes();
+  const currentTime = hours * 60 + minutes; // 轉換為分鐘
+  
+  const startTime = 8 * 60 + 30;  // 08:30 = 510 分鐘
+  const endTime = 14 * 60 + 30;   // 14:30 = 870 分鐘
+  
+  return currentTime >= startTime && currentTime <= endTime;
+}
 
-  <script>
-  let chartInstance = null;
-  let currentMarket = 'twse';
-  let currentType = 'INDEX';
 
-  function fmtNum(n) { if(n === undefined) return '0'; return n.toLocaleString('en-US'); }
-  function fmtFloat(n, d=2) { if(n === undefined) return '0.00'; return n.toFixed(d); }
 
-  // Tooltip
-  function tooltipFormatter(info) {
-    var val = info.data.value; 
-    if (!val) { val = info.value; } 
 
-    var titleSize = '18px';
-    var bodySize = '16px';
-    
-    var styleTitle = `font-family: san-serif; font-size:${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
-    var styleBody = `color:#000; font-size:${bodySize}; line-height:1.8;`;
-    var styleRow = 'display:flex; justify-content:space-between; min-width:200px;';
+// 條件式更新 Heatmap
+function conditionalUpdateHeatmap() {
+  if (isTradingHours()) {
+    console.log('交易時間內,更新 Heatmap');
+    updateHeatmapch
+  } else {
+    console.log('非交易時間,跳過更新');
+  }
+}
 
-    if (Array.isArray(val)) {
-      var name = info.name;
-      var chgPct = fmtFloat(val[1]);
-      var close = fmtFloat(val[2]);
-      var open = fmtFloat(val[4]);
-      var high = fmtFloat(val[5]);
-      var low = fmtFloat(val[6]);
-      var change = fmtFloat(val[7]);
-      var vol = fmtNum(val[8]);
-      var valMoney = fmtNum(val[9]);
+
+
+
+async function updateHeatmap() {
+  if(!chartInstance) chartInstance = echarts.init(document.getElementById('chart-container'));
+  chartInstance.showLoading();
+  const areaVal = document.querySelector('input[name="area_metric"]:checked').value;
+  
+  try {
+  const res = await fetch(`/twheatmap/api/data?market=${currentMarket}&type=${currentType}&area=${areaVal}`);
+  const treeData = await res.json();
+  
+  const option = {
+    tooltip: { 
+    formatter: tooltipFormatter,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderColor: '#ccc',
+    borderWidth: 1,
+    padding: 10
+    },
+    visualMap: {
+    type: 'continuous', dimension: 1, min: -10, max: 10,
+    inRange: { color: ['#31C950', '#FFF085', '#FB2C36'] }, 
+    show: true, orient: 'vertical', left: 10, top: 'middle',
+    itemHeight: 80, textStyle: { color: '#000'}
+    },
+    series: [{
+    type: 'treemap', 
+    data: treeData, 
+    breadcrumb: { show: true }, 
+    leafDepth: null, 
+    roam: true,
+    width: '100%', height: '100%', top: 0, bottom: 0, left: 0, right: 0,
+    levels: currentType === 'INDEX' ? [] : [
+      { itemStyle: { borderColor: '#fff', borderWidth: 0, gapWidth: 0 } },
+      { colorSaturation: [0, 1], itemStyle: { borderColor: '#555', borderWidth: 1, gapWidth: 2 }, upperLabel: { show: true, height: 30, color: '#000', fontWeight: 'bold' } },
+      { colorSaturation: [0, 1], itemStyle: { borderColor: '#fff', borderWidth: 1, gapWidth: 1 }, label: { show: true, position: 'insideTopLeft', formatter: labelFormatter, rich: { name: { fontSize: 14, fontWeight: 'bold', color: '#000'}, val: { fontSize: 12, color: '#333'} } } }
+    ],
+    label: { show: true, formatter: labelFormatterIndex, fontSize: 14, color: '#000' }
+    }]
+  };
+  chartInstance.setOption(option);
+  chartInstance.hideLoading();
+  } catch(e) { console.error(e); }
+}
+
+
+
+
+async function updateNotify() {
+  try {
+    const res = await fetch('/api/monitor');
+    const data = await res.json();
+    document.getElementById('nt-time').innerText = data.timestamp;
+
+    let tableHtml = "";
+    data.rows.forEach(row => {
+      // 數值判斷
+      let changeValue = parseFloat(row.change.replace('%', ''));
       
-      var chgColor = val[1] >= 0 ? '#ff3333' : '#00cc44'; 
-      var chgSign = val[1] >= 0 ? '+' : '';
-
-      var content = `
-        <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
-        <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
-        <div style="${styleRow}"><span>開盤價：</span><span>${open}</span></div>
-        <div style="${styleRow}"><span>最高價：</span><span>${high}</span></div>
-        <div style="${styleRow}"><span>最低價：</span><span>${low}</span></div>
-      `;
-
-      if (currentType === 'EQUITY') {
-        content += `
-          <hr style="margin:5px 0; border:0; border-top:1px dashed #ccc;">
-          <div style="${styleRow}"><span>成交量：</span><span>${vol}</span></div>
-          <div style="${styleRow}"><span>成交金額：</span><span>${valMoney}</span></div>
-        `;
+      let colorClass = "neutral";
+      if (changeValue < 0) {
+        colorClass = "down";
+      } else if (changeValue > 0) {
+        colorClass = "up";
       }
+      
+      // delta 顏色
+      let deltaClass = "neutral";
+      if (row.delta > 0) {
+        deltaClass = "up";
+      } else if (row.delta < 0) {
+        deltaClass = "down";
+      }
+      
+      // 直接使用 row.alert
+      let alertHtml = row.alert || "";
+      
+      tableHtml += `
+      <tr>
+        <td class="stock-symbol-hover" data-symbol="${row.symbol}">
+           <div class="fw-bold">${row.symbol}</div>
+           <div class="small text-muted">${row.name}</div>
+        </td>
+        <td>
+           <div class="fw-bold">${row.price}</div>
+           <div class="${colorClass} small">(${row.change})</div>
+        </td>
+        <td>
+           <span class="${deltaClass}">${(row.delta * 100).toFixed(2)}%</span>
+        </td>
+        <td>
+           ${alertHtml}
+        </td>
+      </tr>`;
+    });
+    document.getElementById('stock-table-body').innerHTML = tableHtml || '<tr><td colspan="4" class="text-center text-muted">無資料</td></tr>';
 
-      return `<div style="${styleTitle}">${name}</div><div style="${styleBody}">${content}</div>`;
-    } else {
-      var displayVal = typeof val === 'number' ? val.toFixed(2) : 'N/A';
-      return `<div style="${styleTitle}">${info.name}</div><div style="${styleBody}">板塊總權重: ${displayVal}</div>`;
+    // 新聞部分
+    let newsHtml = "";
+    if (data.news && data.news.length > 0) {
+      data.news.forEach(n => {
+        newsHtml += `
+        <div class="news-item">
+            <span class="news-tag">${n.tag}</span>
+            <small class="text-muted" style="margin-left: 5px; margin-right: 5px;">${n.date}</small>
+            <a href="${n.link}" target="_blank" class="text-decoration-none text-dark">${n.title}</a>
+        </div>`;
+      });
+      document.getElementById('news-container').innerHTML = newsHtml;
     }
-  }
 
-  // Label Formatter (修正後版本)
-  function labelFormatter(params) {
-    if (Array.isArray(params.value)) {
-       // 確保變數存在
-       var symbol = params.data.id || ''; 
-       var price = '0.00';
-       var chg = '0.00%';
+    // ===== 新增：綁定 hover 事件 =====
+    attachStockHoverEvents();
+    
+  } catch(e) { console.error("Notify Error:", e); }
+}
 
-       if (params.value[2] !== undefined) price = params.value[2].toFixed(2);
-       if (params.value[1] !== undefined) chg = params.value[1].toFixed(2) + '%';
-       
-       // 使用英文變數名，避免 ReferenceError
-       // ECharts rich text 格式: {styleName|text}
-       return '{name|' + params.name + '(' + symbol + ')}\\n{val|' + price + ' | ' + chg + '}';
-    }
-    return params.name;
-  }
 
-  // Label Formatter for Index(修正後版本)
-  function labelFormatterIndex(params) {
-    if (Array.isArray(params.value)) {
-       // 確保變數存在
-       var price = '0.00';
-       var chg = '0.00%';
 
-       if (params.value[2] !== undefined) price = params.value[2].toFixed(2);
-       if (params.value[1] !== undefined) chg = params.value[1].toFixed(2) + '%';
-       
-       // 使用英文變數名，避免 ReferenceError
-       // ECharts rich text 格式: {styleName|text}
-       return params.name + '\\n' + price + ' | ' + chg;
-    }
-    return params.name;
+
+// ===== 新增函數：處理股票代碼 hover 事件 =====
+function attachStockHoverEvents() {
+  const stockCells = document.querySelectorAll('.stock-symbol-hover');
+  
+  stockCells.forEach(cell => {
+    cell.addEventListener('mouseenter', handleStockHover);
+    cell.addEventListener('mouseleave', handleStockLeave);
+  });
+}
+
+
+
+
+function handleStockHover(event) {
+  const symbol = event.currentTarget.getAttribute('data-symbol');
+   
+  let imageUrl = '';
+
+  if (symbol === '^TWII') {
+    imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=IDXWT&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
+  } else if (symbol === '^TWOII') {
+    imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=IDXOT&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
+  } else if (symbol === 'ES=F') {
+    imageUrl = `https://charts2-node.finviz.com/chart.ashx?cs=m&t=@es&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d`;
+  } else if (symbol === 'NQ=F') {
+    imageUrl = `https://charts2-node.finviz.com/chart.ashx?cs=m&t=@nq&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d`;
+  } else if (symbol.includes('.TW')) {
+    const stockCode = symbol.split('.')[0];
+    imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
+  } else {
+    imageUrl = `https://charts2.finviz.com/chart.ashx?t=${symbol}&ta=1&ty=c&p=d&s=l`;
   }
   
+  let popup = document.getElementById('stock-chart-popup');
+  if (!popup) {
+    popup = document.createElement('div');
+    popup.id = 'stock-chart-popup';
+    popup.className = 'stock-popup';
+    document.body.appendChild(popup);
+  }
+  
+  popup.innerHTML = '<div class="loading">載入圖表中...</div>';
+  popup.style.display = 'block';
+  
+  // 固定位置：螢幕中央
+  popup.style.left = '30%';
+  popup.style.top = '50%';
+  popup.style.transform = 'translate(-50%, -50%)';
+  
+  const img = new Image();
+  img.onload = () => {
+    popup.innerHTML = '';
+    popup.appendChild(img);
+  };
+  img.onerror = () => {
+    popup.innerHTML = '<div class="loading" style="color: red;">圖表載入失敗</div>';
+  };
+  img.src = imageUrl;
+}
 
-  document.addEventListener('DOMContentLoaded', () => {
-    chartInstance = echarts.init(document.getElementById('chart-container'));
 
-    const buttons = document.querySelectorAll('.tab-btn');
-    buttons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        buttons.forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        currentMarket = e.target.dataset.market;
-        currentType = e.target.dataset.type;
-        updateChart();
-      });
-    });
 
-    document.querySelectorAll('input[name="area_metric"]').forEach(el => {
-      el.addEventListener('change', updateChart);
-    });
+
+function handleStockLeave(event) {
+  const popup = document.getElementById('stock-chart-popup');
+  if (popup) {
+    popup.style.display = 'none';
     
-    window.addEventListener('resize', () => { if(chartInstance) chartInstance.resize(); });
-
-    updateChart();
-    setInterval(updateChart, 300000);
-  });
-
-  async function updateChart() {
-    const areaVal = document.querySelector('input[name="area_metric"]:checked').value;
-    const loadingMsg = document.getElementById('loading-msg');
-    
-    loadingMsg.style.display = 'inline-block';
-    if(chartInstance) chartInstance.showLoading({ color: '#000', textColor: '#000' });
-
-    try {
-      const url = `/twheatmap/api/data?market=${currentMarket}&type=${currentType}&area=${areaVal}`;
-      const res = await fetch(url);
-      const treeData = await res.json();
-      
-      chartInstance.hideLoading();
-
-      const levels = [
-        {
-          itemStyle: { 
-            borderColor: '#fff', 
-            borderWidth: 0, 
-            gapWidth: 0 
-          }
-        },
-        {
-          // 【Level 1: 產業】
-          colorSaturation: [0, 1],
-          itemStyle: { 
-            borderColor: '#555', 
-            borderWidth: 1, 
-            gapWidth: 2
-          },
-          upperLabel: {
-            show: true, 
-            height: 30,    
-            color: '#EEEEEE',
-            fontWeight: 'bold',
-            fontSize: 16,
-            position: 'inside',
-            padding: [5, 5]
-          }
-        },
-        {
-          // 【Level 2: 個股】
-          colorSaturation: [0, 1],
-          itemStyle: { 
-            borderColor: '#fff',
-            borderWidth: 1, 
-            gapWidth: 1 
-          },
-          label: {
-            show: true,
-            position: 'insideTopLeft',
-            color: '#000',
-            formatter: labelFormatter,
-            padding: [4, 4],
-            rich: {
-              name: {
-                fontSize: 16,
-                fontWeight: 'bold',
-                lineHeight: 22,
-                color: '#000'
-              },
-              val: {
-                fontSize: 14,
-                color: '#333',
-                lineHeight: 18
-              }
-            }
-          }
-        }
-      ];
-
-      const option = {
-        //title: {
-        //  text: (currentType==='INDEX'?'指數':'個股') + ' Treemap',
-        //  subtext: '面積：' + areaVal,
-        //  textStyle: { fontFamily: "san-serif", color: '#000', fontSize: 26 },
-        //  subtextStyle: { fontFamily: "san-serif", color: '#333' }
-        //},
-        tooltip: {
-          formatter: tooltipFormatter,
-          textStyle: { fontFamily: "san-serif", color: '#000' },
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          borderColor: '#ccc',
-          borderWidth: 1,
-          padding: 10
-        },
-        visualMap: {
-          type: 'continuous',
-          dimension: 1,
-          min: -10,
-          max: 10,
-          //inRange: { color: ['#8ec98e', '#f7f09f', '#ea8685'] },
-          //inRange: { color: ['#51c951', '#f7f09f', '#eb605e'] },
-          inRange: { color: ['#31C950', '#FFF085', '#FB2C36'] },
-          show: true,
-          textStyle: { color: '#000' }
-        },
-        series: [{
-          type: 'treemap',
-          data: treeData,
-          top: '0%',
-          bottom: '0%',
-          left: '0%',
-          right: '0%',
-          width: '100%',
-          height: '100%',
-          
-          // 顯示所有層級 (關鍵設定)
-          leafDepth: null, 
-          
-          roam: true,
-          levels: currentType === 'INDEX' ? [] : levels,
-          breadcrumb: { show: true },
-          
-          label: {
-            show: true,
-            position: 'inside',
-            formatter: labelFormatterIndex,
-            fontFamily: "san-serif",
-            fontSize: 16,
-            color: '#000'
-          }
-        }]
-      };
-
-      chartInstance.setOption(option, true);
-      
-    } catch (err) {
-      console.error(err);
-      if(chartInstance) chartInstance.hideLoading();
-    } finally {
-      loadingMsg.style.display = 'none';
+    // 移除滑鼠移動監聽
+    if (popup._updatePosition) {
+      event.currentTarget.removeEventListener('mousemove', popup._updatePosition);
+      popup._updatePosition = null;
     }
   }
-  </script>
+}
+
+
+
+
+window.addEventListener('resize', () => { if(chartInstance) chartInstance.resize(); });
+document.addEventListener('DOMContentLoaded', () => {
+  updateHeatmap();
+  updateNotify();
+  //setInterval(updateHeatmap, 300000);
+  setInterval(conditionalUpdateHeatmap, 300000);  // 每 5 分鐘檢查一次
+  setInterval(updateNotify, 120000);
+});
+</script>
+
+<div id="stock-chart-popup" class="stock-popup"></div>
 </body>
 </html>
 """
@@ -2367,24 +2706,37 @@ HTML_TEMPLATE = """
 
 
 
-# --- 4. Flask 路由 ---
-@app.route("/twheatmap/")
-def twheatmap_index():
+#@app.route("/")
+@app.route("/stockdashboard/")
+def stockdashboard():
   return render_template_string(HTML_TEMPLATE)
 
 
 
 
 @app.route("/twheatmap/api/data")
-def twheatmap_api_data_only():
+def api_heatmap_data():
   market = request.args.get("market", "twse")
   type_filter = request.args.get("type", "INDEX")
   area_metric = request.args.get("area", "tradeValueWeight")
   
+  print(f"[DEBUG] API Request - Heatmap: Market={market}, Type={type_filter}") # Trace Request
+  
   df = get_clean_dataframe(market)
-  data_list = build_data_for_frontend(df, type_filter, area_metric)
+  data_list = build_heatmap_data(df, type_filter, area_metric)
+  
+  print(f"[DEBUG] Heatmap data returned: {len(data_list)} items") # Trace Response
   
   return json.dumps(data_list)
+
+
+
+
+@app.route("/api/monitor")
+def api_monitor():
+  print("[DEBUG] API Request - Monitor Check")
+  result = monitor.run_check()
+  return jsonify(result)
 
 
 
