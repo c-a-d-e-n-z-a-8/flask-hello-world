@@ -26,8 +26,6 @@ from pyecharts import options as opts
 from pyecharts.charts import Line
 
 import time
-import plotly
-import plotly.express as px
 
 
 
