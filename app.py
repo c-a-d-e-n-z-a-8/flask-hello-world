@@ -1771,8 +1771,8 @@ class StockMonitor:
     today = date.today()
     startDate = today - timedelta(days=365)
     endDate = today
-    startDate_epoch = int(datetime.datetime.combine(startDate, datetime.datetime.now().time()).timestamp())
-    endDate_epoch = int(datetime.datetime.combine(endDate, datetime.datetime.now().time()).timestamp())
+    startDate_epoch = int(datetime.combine(startDate, datetime.now().time()).timestamp())
+    endDate_epoch = int(datetime.combine(endDate, datetime.now().time()).timestamp())
     crumb = "dx7e5yMCafJ"
     
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker[0]}?period1={startDate_epoch}&period2={endDate_epoch}&interval=1d&events=history&includeAdjustedClose=true&events=div%2Csplits&crumb={crumb}"
@@ -2093,7 +2093,7 @@ class StockMonitor:
     
 
   def run_check(self):
-    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [DEBUG] Starting Monitor run_check (Count: {self.run_count})")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Starting Monitor run_check (Count: {self.run_count})")
     if not self.initialized:
       self.init_portfolio()
 
@@ -2200,7 +2200,7 @@ class StockMonitor:
 
     # 只有當計數器是 0 或 30 的倍數時，才真正去爬蟲
     if self.run_count % 30 == 0:
-      print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [DEBUG] Updating PTT News (Keywords/Authors)...")
+      print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Updating PTT News (Keywords/Authors)...")
       self.news_cache = ticker_news + self.get_ptt_news(keywords) +  self.get_ptt_authors("Stock", PTT_AUTHORS)
       print(f"[DEBUG] Total News Found: {len(self.news_cache)}")
     
@@ -2208,7 +2208,7 @@ class StockMonitor:
     # === 修改結束 ===
 
     return {
-      "timestamp": datetime.datetime.now().strftime('%H:%M:%S'),
+      "timestamp": datetime.now().strftime('%H:%M:%S'),
       "rows": rows,
       "news": self.news_cache  # 這裡改成回傳 cache
     }
