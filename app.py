@@ -26,8 +26,9 @@ from pyecharts import options as opts
 from pyecharts.charts import Line
 
 import time
-
-
+import traceback
+from curl_cffi import requests
+from bs4 import BeautifulSoup as BS
 
 
 # Initialization
