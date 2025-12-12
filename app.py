@@ -29,6 +29,7 @@ import time
 import traceback
 from curl_cffi import requests
 from bs4 import BeautifulSoup as BS
+from zoneinfo import ZoneInfo
 
 
 # Initialization
@@ -1751,7 +1752,7 @@ class StockMonitor:
     self.IDX_200MA_1 = 11
 
     self.initialized = False
-    self.url_git_json = portfolio_url
+    self.url_git_json = "https://raw.githubusercontent.com/c-a-d-e-n-z-a/json/main/portfolio.json"
     
     # Constants
     self.DELTA_U = 0.01618
@@ -2096,6 +2097,28 @@ class StockMonitor:
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Starting Monitor run_check (Count: {self.run_count})")
     if not self.initialized:
       self.init_portfolio()
+      
+    # ==========================================
+    # [新增] 每 30 次迴圈，更新一次所有股票的 MA
+    # ==========================================
+    if self.run_count > 0 and self.run_count % 30 == 0:
+      print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Updating Portfolio Moving Averages...")
+      for p in self.portfolio:
+        # p[0] 是 symbol (e.g., "2330.TW")
+        # 重新計算 MA
+        new_ma = self.ma_calculation(p)
+        
+        # ma_calculation 回傳格式: [None, ma10, ma20, ma60, ma200, ma10_1, ma20_1, ma60_1, ma200_1]
+        # self.portfolio (p) 的結構: 
+        # idx 0:Symbol, 1:Low, 2:High, 3:Price, 
+        # idx 4:MA10, 5:MA20, 6:MA60, 7:MA200, 8:MA10_1, ... 11:MA200_1
+        
+        # 確保有抓到資料才更新
+        if len(new_ma) >= 9:
+          # 使用 List Slicing 直接替換掉舊的 MA 數值 (從 index 4 到 11)
+          p[4:12] = new_ma[1:]
+          # print(f"[DEBUG] Updated MA for {p[0]}")
+      print("[DEBUG] MA Update Complete.")
 
     rows = []
     ticker_news = []
@@ -2105,7 +2128,7 @@ class StockMonitor:
       chunk = self.portfolio[c:c+chunk_len]
       tickers = [p[0] for p in chunk]
       tickers_url = ','.join(tickers)
-      url = yahoo_url + tickers_url
+      url = 'https://tw.stock.yahoo.com/_td-stock/api/resource/StockServices.stockList;symbols=' + tickers_url
       
       # print(f"[DEBUG] Fetching chunk {c//chunk_len + 1} from Yahoo...") # Trace chunk
       
@@ -2192,9 +2215,23 @@ class StockMonitor:
       except Exception as e:
         print(f"[ERROR] Yahoo Update error: {e}")
         traceback.print_exc()
-        
+    
+    #=== 定義輔助函數 ==
+    def safe_parse_change(change_str):
+      # 安全解析 change 百分比字串，返回絕對值
+      try:
+        return abs(float(str(change_str).rstrip('%')))
+      except (ValueError, AttributeError, TypeError):
+        return 0.0
+    
+    rows.sort(key=lambda x: (
+      -abs(x.get('delta', 0)),                   # Level 1:delta絕對值（大到小）
+      -safe_parse_change(x.get('change', '0%'))  # Level 2:change絕對值（大到小）
+    ))
+    
     # 排序但保留 delta
-    rows.sort(key=lambda x: abs(x.get('delta', 0)), reverse=True)
+    #rows.sort(key=lambda x: abs(x.get('delta', 0)), reverse=True)
+    
     
     keywords = [p[0].split('.')[0] for p in self.portfolio]
 
@@ -2208,7 +2245,7 @@ class StockMonitor:
     # === 修改結束 ===
 
     return {
-      "timestamp": datetime.now().strftime('%H:%M:%S'),
+      "timestamp": datetime.now(ZoneInfo('Asia/Taipei')).strftime('%H:%M:%S'),
       "rows": rows,
       "news": self.news_cache  # 這裡改成回傳 cache
     }
@@ -2479,9 +2516,9 @@ function isTwTradingHours() {
 
 // 條件式更新 Heatmap
 function conditionalUpdateHeatmap() {
-  if (isTradingHours()) {
+  if (isTwTradingHours()) {
     console.log('交易時間內,更新 Heatmap');
-    updateHeatmapch
+    updateHeatmap();
   } else {
     console.log('非交易時間,跳過更新');
   }
