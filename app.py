@@ -1752,7 +1752,7 @@ class StockMonitor:
     self.IDX_200MA_1 = 11
 
     self.initialized = False
-    self.url_git_json = "https://raw.githubusercontent.com/c-a-d-e-n-z-a/json/main/portfolio.json"
+    self.url_git_json = portfolio_url
     
     # Constants
     self.DELTA_U = 0.01618
@@ -2128,7 +2128,7 @@ class StockMonitor:
       chunk = self.portfolio[c:c+chunk_len]
       tickers = [p[0] for p in chunk]
       tickers_url = ','.join(tickers)
-      url = 'https://tw.stock.yahoo.com/_td-stock/api/resource/StockServices.stockList;symbols=' + tickers_url
+      url = yahoo_url + tickers_url
       
       # print(f"[DEBUG] Fetching chunk {c//chunk_len + 1} from Yahoo...") # Trace chunk
       
