@@ -1602,7 +1602,7 @@ INDUSTRY_MAP = {
   "38": "居家生活", "80": "管理股票",
 }
 
-PTT_AUTHORS = ["sky22485816", "a000000000", "waitrop", "zmcx16", "Robertshih", "Test520", "zesonpso", "MrChen", "phcebus", "f204137", "a0808996", "IBIZA", "leo15824", "tosay", "LDPC", "nina801105", "mrp"]
+PTT_AUTHORS = ["sky22485816", "a000000000", "waitrop", "zmcx16", "Robertshih", "Test520", "zesonpso", "MrChen", "phcebus", "f204137", "a0808996", "IBIZA", "leo15824", "tosay", "LDPC", "nina801105", "mrp", "minazukimaya"]
 
 DATA_CACHE = {"twse": None, "otc": None, "last_update": 0}
 CACHE_DURATION = 300
@@ -2349,6 +2349,18 @@ HTML_TEMPLATE = """
   .table-custom tr:hover { background-color: #f1f1f1; }
   
   .news-item { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 0.85rem; line-height: 1.4; }
+  .news-link {
+    color: #212529; /* 未點擊時：深黑色 (原本 text-dark 的顏色) */
+    text-decoration: none;
+  }
+  .news-link:visited {
+    color: #adb5bd; /* 已點擊時：淺灰色 */
+  }
+  .news-link:hover {
+    color: #000;    /* 滑鼠移過去變全黑 */
+    text-decoration: underline; /* 增加底線提示 */
+  }
+  
   .up { color: #dc3545; font-weight: bold; }
   .down { color: #198754; font-weight: bold; }
   .neutral { color: #6c757d; font-weight: normal; }  /* 灰色,較淡 */
@@ -2682,7 +2694,7 @@ async function updateNotify() {
         <div class="news-item">
             <span class="news-tag">${n.tag}</span>
             <small class="text-muted" style="margin-left: 5px; margin-right: 5px;">${n.date}</small>
-            <a href="${n.link}" target="_blank" class="text-decoration-none text-dark">${n.title}</a>
+            <a href="${n.link}" target="_blank" class="news-link">${n.title}</a>
         </div>`;
       });
       document.getElementById('news-container').innerHTML = newsHtml;
