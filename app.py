@@ -1820,9 +1820,16 @@ class StockMonitor:
 
     print("[DEBUG] Calculating missing MA data for portfolio...")
     for p in self.portfolio:
+      # 當長度不足時計算，或者在 Reset 強制重算時也會補上
       if len(p) < 12:
         ma = self.ma_calculation(p)
         p.extend(ma)
+      else:
+        # 如果欄位已存在 (Reset 情況)，則更新後面的 MA
+        ma = self.ma_calculation(p)
+        if len(ma) >= 9:
+            p[4:12] = ma[1:]
+
     self.initialized = True
     print("[DEBUG] Portfolio Initialization Complete.")
 
@@ -2090,8 +2097,43 @@ class StockMonitor:
     # --------------------------
     return " | ".join(msgs)
 
+  
+
+
+  def get_fitx_data(self):
+    try:
+      url = "https://histock.tw/stock/module/function.aspx?m=stocktop2017&no=FITX"
+      r = self.session.get(url, headers=self.headers, timeout=5)
+      
+      if r.status_code == 200:
+        raw_html = r.text.split('~')[0]
+        soup = BS(raw_html, 'html.parser')
+        values = soup.select('div.ci_value')
+        
+        if len(values) >= 3:
+          price = float(values[0].text.strip().replace(',', ''))
+          change_str = values[2].text.strip()
+          
+          try:
+            delta = float(change_str.replace('%', '')) / 100
+          except:
+            delta = 0.0
+
+          return {
+            "symbol": "FITX",
+            "name": "台指期",
+            "price": price,
+            "change": change_str,
+            "alert": "",
+            "delta": delta
+          }
+    except Exception as e:
+      print(f"[ERROR] FITX Fetch Error: {e}")
     
-    
+    return None  
+
+
+
 
   def run_check(self):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Starting Monitor run_check (Count: {self.run_count})")
@@ -2215,6 +2257,13 @@ class StockMonitor:
       except Exception as e:
         print(f"[ERROR] Yahoo Update error: {e}")
         traceback.print_exc()
+    
+    # ==========================================
+    # [新增] 抓取台指期 (使用獨立 Function)
+    # ==========================================
+    fitx_data = self.get_fitx_data()
+    if fitx_data:
+      rows.append(fitx_data)
     
     #=== 定義輔助函數 ==
     def safe_parse_change(change_str):
@@ -2370,7 +2419,10 @@ HTML_TEMPLATE = """
     
     <div class="control-bar d-flex justify-content-between align-items-center">
        <span class="fw-bold">Monitor System</span>
-       <span class="badge bg-secondary" id="nt-time">--:--</span>
+       <div class="d-flex align-items-center">
+         <span class="badge bg-secondary" id="nt-time">--:--</span>
+         <button class="btn btn-sm btn-outline-secondary ms-2" style="padding: 0px 6px; font-size: 0.8rem;" onclick="resetMonitor()">Reset</button>
+       </div>
     </div>
     
     <div class="card">
@@ -2385,7 +2437,7 @@ HTML_TEMPLATE = """
                </tr>
             </thead>
             <tbody id="stock-table-body">
-               <tr><td colspan="3" class="text-center text-muted">載入中...</td></tr>
+               <tr><td colspan="4" class="text-center text-muted">載入中...</td></tr>
             </tbody>
          </table>
       </div>
@@ -2644,6 +2696,33 @@ async function updateNotify() {
 
 
 
+// 新增：Reset 按鈕功能
+async function resetMonitor() {
+  if(!confirm("確定要重新載入設定與重算均線嗎？")) return;
+  
+  // 讓按鈕暫時失效顯示載入中
+  const btn = document.querySelector("button[onclick='resetMonitor()']");
+  const originalText = btn.innerText;
+  btn.innerText = "Processing...";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/reset');
+    const data = await res.json();
+    alert(data.message);
+    // 成功後立即刷新列表
+    updateNotify();
+  } catch(e) {
+    console.error(e);
+    alert("Reset Failed: " + e);
+  } finally {
+    btn.innerText = originalText;
+    btn.disabled = false;
+  }
+}
+
+
+
 
 // ===== 新增函數：處理股票代碼 hover 事件 =====
 function attachStockHoverEvents() {
@@ -2658,24 +2737,34 @@ function attachStockHoverEvents() {
 
 
 
+// 定義固定的對應表 (可以放在 function 外面，避免每次執行都重新宣告)
+const CHART_URL_MAP = {
+  '^TWII': 'https://stock.wearn.com/finance_chart.asp?stockid=IDXWT&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1',
+  '^TWOII': 'https://stock.wearn.com/finance_chart.asp?stockid=IDXOT&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1',
+  'ES=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@es&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d',
+  'NQ=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@nq&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d',
+  'BTC-USD': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@btcusd&tf=d&ct=candle_stick&tm=d',
+  'ETH-USD': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@ethusd&tf=d&ct=candle_stick&tm=d'
+};
+
+
+
+
 function handleStockHover(event) {
   const symbol = event.currentTarget.getAttribute('data-symbol');
    
-  let imageUrl = '';
+  // 1. 優先查表 (Exact Match)
+  let imageUrl = CHART_URL_MAP[symbol];
 
-  if (symbol === '^TWII') {
-    imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=IDXWT&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
-  } else if (symbol === '^TWOII') {
-    imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=IDXOT&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
-  } else if (symbol === 'ES=F') {
-    imageUrl = `https://charts2-node.finviz.com/chart.ashx?cs=m&t=@es&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d`;
-  } else if (symbol === 'NQ=F') {
-    imageUrl = `https://charts2-node.finviz.com/chart.ashx?cs=m&t=@nq&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d`;
-  } else if (symbol.includes('.TW')) {
-    const stockCode = symbol.split('.')[0];
-    imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
-  } else {
-    imageUrl = `https://charts2.finviz.com/chart.ashx?t=${symbol}&ta=1&ty=c&p=d&s=l`;
+  // 2. 如果查不到，再處理動態邏輯
+  if (!imageUrl) {
+    if (symbol.includes('.TW')) {
+      const stockCode = symbol.split('.')[0];
+      imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
+    } else {
+      // 預設美股/其他
+      imageUrl = `https://charts2.finviz.com/chart.ashx?t=${symbol}&ta=1&ty=c&p=d&s=l`;
+    }
   }
   
   let popup = document.getElementById('stock-chart-popup');
@@ -2773,6 +2862,18 @@ def api_monitor():
   print("[DEBUG] API Request - Monitor Check")
   result = monitor.run_check()
   return jsonify(result)
+
+
+
+
+# 新增的 Reset API
+@app.route("/api/reset")
+def api_reset():
+  print("[DEBUG] API Request - Reset Monitor")
+  monitor.initialized = False
+  # 立即重新執行初始化與 MA 計算
+  monitor.init_portfolio()
+  return jsonify({"status": "ok", "message": "Monitor System Reset Complete (JSON Reloaded, MA Recalculated)."})
 
 
 
