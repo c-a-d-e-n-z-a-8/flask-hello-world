@@ -2307,7 +2307,6 @@ monitor = StockMonitor()
 # ==========================================
 # PART 3: Web Application
 # ==========================================
-
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -2637,6 +2636,81 @@ async function updateHeatmap() {
 
 
 
+// [新增] 將 Yahoo 代碼轉換為 TradingView URL
+function getYahooToTradingViewUrl(symbol) {
+  let tvSymbol = symbol;
+
+  // 1. 特殊指數與期貨對照表
+  const indexMap = {
+    '^TWII': 'TWSE:TAIEX',      // 加權指數
+    '^TWOII': 'TPEX:TPEX',      // 櫃買指數
+    'FITX': 'TAIFEX:TX1!',      // 台指期 (使用 TX1! 代表連續月)
+    '^GSPC': 'SP:SPX',          // S&P 500
+    '^NDX': 'TVC:NDX',          // Nasdaq 100
+    '^IXIC': 'TVC:IXIC',        // Nasdaq Composite
+    '^DJI': 'DJ:DJI',           // 道瓊
+    'ES=F': 'CME_MINI:ES1!',    // S&P 500 期貨
+    'NQ=F': 'CME_MINI:NQ1!',    // Nasdaq 期貨
+    'YM=F': 'CBOT_MINI:YM1!'    // 道瓊期貨
+  };
+
+  if (indexMap[symbol]) {
+    tvSymbol = indexMap[symbol];
+  } 
+  // 2. 台股上市 (Yahoo: 2330.TW -> TV: TWSE:2330)
+  else if (symbol.endsWith('.TW')) {
+    tvSymbol = 'TWSE:' + symbol.replace('.TW', '');
+  } 
+  // 3. 台股上櫃 (Yahoo: 3105.TWO -> TV: TPEX:3105)
+  else if (symbol.endsWith('.TWO')) {
+    tvSymbol = 'TPEX:' + symbol.replace('.TWO', '');
+  }
+  // 4. 美股 (Yahoo: BRK-B -> TV: BRK.B, 其他通常通用)
+  else {
+    tvSymbol = symbol.replace('-', '.'); 
+  }
+
+  // 回傳 TradingView 超級圖表連結
+  return `https://www.tradingview.com/chart/?symbol=${tvSymbol}`;
+}
+
+
+
+
+// [新增] 取得社群討論區連結 (CMoney / 富途)
+function getCommunityLink(symbol) {
+
+  // 1. 特殊指數與期貨對照表
+  const communityMap = {
+    '^TWII': 'https://www.cmoney.tw/forum/market',      // 加權指數
+    '^TWOII': 'https://www.cmoney.tw/forum/stock/TWC00',      // 櫃買指數
+    'FITX': 'https://www.cmoney.tw/forum/futures/TXF1',      // 台指期
+    '^GSPC': 'https://www.futunn.com/hk/index/.SPX-US/community',           // S&P 500
+    '^IXIC': 'https://www.futunn.com/hk/index/.IXIC-US',        // Nasdaq Composite
+    '^DJI': 'https://www.futunn.com/hk/index/.DJI-US',            // 道瓊
+  };
+
+  // 修正點：如果對照表有資料，直接回傳該網址
+  if (communityMap[symbol]) {
+    return communityMap[symbol];
+  } 
+  
+  // 2. 判斷是否包含 .TW (涵蓋 .TW 與 .TWO)
+  else if (symbol.includes('.TW')) {
+    // 移除 .TW 或 .TWO，只保留代碼 (e.g., 2330.TW -> 2330)
+    const code = symbol.split('.')[0];
+    return `https://www.cmoney.tw/forum/stock/${code}`;
+  } 
+  
+  // 3. 美股或其他：使用富途牛牛 (需加上 -US)
+  else {
+    return `https://www.futunn.com/hk/stock/${symbol}-US/community`;
+  }
+}
+
+
+
+
 async function updateNotify() {
   try {
     const res = await fetch('/api/monitor');
@@ -2662,15 +2736,20 @@ async function updateNotify() {
       } else if (row.delta < 0) {
         deltaClass = "down";
       }
+          
+      // 1. 取得 TradingView 連結 (這是原本的)
+      const tvLink = getYahooToTradingViewUrl(row.symbol);
       
-      // 直接使用 row.alert
-      let alertHtml = row.alert || "";
+      // 2. [新增] 取得社群連結
+      const commLink = getCommunityLink(row.symbol);
       
       tableHtml += `
       <tr>
         <td class="stock-symbol-hover" data-symbol="${row.symbol}">
-           <div class="fw-bold">${row.symbol}</div>
-           <div class="small text-muted">${row.name}</div>
+           <a href="${tvLink}" target="_blank" style="text-decoration:none; color:inherit; display:block;">
+             <div class="fw-bold">${row.symbol}</div>
+             <div class="small text-muted">${row.name}</div>
+           </a>
         </td>
         <td>
            <div class="fw-bold">${row.price}</div>
@@ -2679,8 +2758,10 @@ async function updateNotify() {
         <td>
            <span class="${deltaClass}">${(row.delta * 100).toFixed(2)}%</span>
         </td>
-        <td>
-           ${alertHtml}
+        <td style="padding: 0; height: 1px;">
+           <a href="${commLink}" target="_blank" style="display: flex; align-items: center; width: 100%; height: 100%; padding: 8px; text-decoration:none; color:inherit;">
+             <div style="width: 100%">${row.alert || ""}</div>
+           </a>
         </td>
       </tr>`;
     });
@@ -2749,12 +2830,34 @@ function attachStockHoverEvents() {
 
 
 
-// 定義固定的對應表 (可以放在 function 外面，避免每次執行都重新宣告)
 const CHART_URL_MAP = {
+  // === 台股相關 ===
   '^TWII': 'https://stock.wearn.com/finance_chart.asp?stockid=IDXWT&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1',
   '^TWOII': 'https://stock.wearn.com/finance_chart.asp?stockid=IDXOT&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1',
-  'ES=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@es&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d',
-  'NQ=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@nq&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d',
+  'FITX': 'https://stock.wearn.com/finance_chart.asp?stockid=WTX&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1', // 台指期
+
+  // === 美股期貨 (維持原本 Intraday 5分K) ===
+  'ES=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@es&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // S&P 500 Futures
+  'NQ=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@nq&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // Nasdaq 100 Futures
+  'YM=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@ym&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // Dow Jones Futures
+
+  // === 美股現貨指數 (使用日線 tf=d 看趨勢) ===
+  '^GSPC': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=SPY&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // S&P 500 (用 SPY 代表)
+  '^IXIC': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=QQQ&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // Nasdaq (用 QQQ 代表)
+  '^DJI':  'https://charts2-node.finviz.com/chart.ashx?cs=m&t=DIA&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // Dow Jones (用 DIA 代表)
+  '^VIX':  'https://charts2-node.finviz.com/chart.ashx?cs=m&t=VIX&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 恐慌指數
+
+  // === 匯率 Forex (Finviz 代碼對應) ===
+  'DX-Y.NYB': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=DX&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d',     // 美元指數 (DXY)
+  'EURUSD=X': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=EURUSD&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 歐元/美元
+  'JPY=X':    'https://charts2-node.finviz.com/chart.ashx?cs=m&t=USDJPY&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 美元/日幣
+  'GBPUSD=X': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=GBPUSD&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 英鎊/美元
+
+  // === 原物料 Commodities ===
+  'GC=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@GC&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 黃金期貨
+  'CL=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@CL&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 原油期貨
+
+  // === 加密貨幣 ===
   'BTC-USD': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@btcusd&tf=d&ct=candle_stick&tm=d',
   'ETH-USD': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@ethusd&tf=d&ct=candle_stick&tm=d'
 };
