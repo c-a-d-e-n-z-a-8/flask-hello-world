@@ -2651,7 +2651,11 @@ function getYahooToTradingViewUrl(symbol) {
     '^DJI': 'DJ:DJI',           // 道瓊
     'ES=F': 'CME_MINI:ES1!',    // S&P 500 期貨
     'NQ=F': 'CME_MINI:NQ1!',    // Nasdaq 期貨
-    'YM=F': 'CBOT_MINI:YM1!'    // 道瓊期貨
+    'YM=F': 'CBOT_MINI:YM1!',   // 道瓊期貨
+    'BTC-USD': 'BTCUSD',
+    'ETH-USD': 'ETHUSD',
+    'SOL-USD': 'SOLUSD',
+    'DOGE-USD': 'DOGEUSD'
   };
 
   if (indexMap[symbol]) {
