@@ -2649,9 +2649,15 @@ function getYahooToTradingViewUrl(symbol) {
     '^NDX': 'TVC:NDX',          // Nasdaq 100
     '^IXIC': 'TVC:IXIC',        // Nasdaq Composite
     '^DJI': 'DJ:DJI',           // 道瓊
+    '^N225': 'TVC:NI225',       // Nikkei 225
+    '^KS11': 'KRX:KOSPI',       // KOSPI Composite Index
+    '^VIX': 'VIX',
+    '^VXN': 'VXN',
     'ES=F': 'CME_MINI:ES1!',    // S&P 500 期貨
     'NQ=F': 'CME_MINI:NQ1!',    // Nasdaq 期貨
     'YM=F': 'CBOT_MINI:YM1!',   // 道瓊期貨
+    'TWD=X': 'USDTWD',
+    'JPYTWD=X': 'JPYTWD',
     'BTC-USD': 'BTCUSD',
     'ETH-USD': 'ETHUSD',
     'SOL-USD': 'SOLUSD',
@@ -2660,7 +2666,8 @@ function getYahooToTradingViewUrl(symbol) {
 
   if (indexMap[symbol]) {
     tvSymbol = indexMap[symbol];
-  } 
+  }
+  
   // 2. 台股上市 (Yahoo: 2330.TW -> TV: TWSE:2330)
   else if (symbol.endsWith('.TW')) {
     tvSymbol = 'TWSE:' + symbol.replace('.TW', '');
@@ -2669,7 +2676,11 @@ function getYahooToTradingViewUrl(symbol) {
   else if (symbol.endsWith('.TWO')) {
     tvSymbol = 'TPEX:' + symbol.replace('.TWO', '');
   }
-  // 4. 美股 (Yahoo: BRK-B -> TV: BRK.B, 其他通常通用)
+  // 4. 滬深 (Yahoo: 000300.SS -> TV: SSE:000300)
+  else if (symbol.endsWith('.SS')) {
+    tvSymbol = 'SSE:' + symbol.replace('.SS', '');
+  }  
+  // 5. 美股 (Yahoo: BRK-B -> TV: BRK.B, 其他通常通用)
   else {
     tvSymbol = symbol.replace('-', '.'); 
   }
@@ -2677,6 +2688,7 @@ function getYahooToTradingViewUrl(symbol) {
   // 回傳 TradingView 超級圖表連結
   return `https://www.tradingview.com/chart/?symbol=${tvSymbol}`;
 }
+
 
 
 
