@@ -2112,7 +2112,13 @@ class StockMonitor:
         
         if len(values) >= 3:
           price = float(values[0].text.strip().replace(',', ''))
-          change_str = values[2].text.strip()
+          change_val_str = values[1].text.strip().replace('▼', '-').replace('▲', '')
+          change_pct_str = values[2].text.strip()
+
+          try:
+            change_val = float(change_val_str)
+          except:
+            change_val = 0.0
           
           try:
             delta = float(change_str.replace('%', '')) / 100
@@ -2123,9 +2129,11 @@ class StockMonitor:
             "symbol": "FITX",
             "name": "台指期",
             "price": price,
-            "change": change_str,
+            "change": change_pct_str,
+            "change_val": change_val, # [新增]
             "alert": "",
-            "delta": delta
+            "delta": delta,
+            "delta_val": 0.0 # [新增] 台指期可能沒有 "監控起始價" 的概念，暫設為 0
           }
     except Exception as e:
       print(f"[ERROR] FITX Fetch Error: {e}")
@@ -2196,14 +2204,22 @@ class StockMonitor:
             for i, p in enumerate(self.portfolio):
               if p[0] == symbol:
                 name = item.get('symbolName', '').split(' ')[0]
-                change = item.get('changePercent', '0%')
+                
+                change_percent_str = item.get('changePercent', '0%')                
+                # 嘗試提取 change 數值，若失敗則設為 0
+                try:
+                  change_val = float(item.get('change', {}).get('raw', 0))
+                except (TypeError, ValueError):
+                  change_val = 0.0
                 
                 p_last = p[self.IDX_P]
                 if p_last is None: p[self.IDX_P] = price
                 
                 delta = 0
+                delta_val = 0 # 新增 delta_val
                 if p[self.IDX_P]:
                   delta = (price - p[self.IDX_P]) / p[self.IDX_P]
+                  delta_val = price - p[self.IDX_P] # 計算相對於監控起始價的變動值
                   p[self.IDX_P] = price
 
                 # 1. 收集所有警示訊息到一個 List
@@ -2248,9 +2264,11 @@ class StockMonitor:
                   "symbol": symbol,
                   "name": name,
                   "price": price,
-                  "change": change,
+                  "change": change_percent_str, # 這裡維持百分比字串
+                  "change_val": change_val,     # [新增] 傳遞變動數值
                   "alert": final_alert,
-                  "delta": delta
+                  "delta": delta,
+                  "delta_val": delta_val        # [新增] 傳遞 Delta 數值
                 })
         else:
            print(f"[WARN] Yahoo API Non-200 Status: {r.status_code}")
@@ -2442,9 +2460,9 @@ HTML_TEMPLATE = """
             <thead>
                <tr>
                 <th style="width: 20%">股票</th>
-                <th style="width: 15%">價/幅</th>
+                <th style="width: 20%">價/幅</th>
                 <th style="width: 15%">變動率</th>
-                <th style="width: 50%">警示</th>
+                <th style="width: 45%">警示</th>
                </tr>
             </thead>
             <tbody id="stock-table-body">
@@ -2491,6 +2509,8 @@ function setMarket(btn, market, type) {
 function tooltipFormatter(info) {
   var val = info.data.value; 
   if (!val) { val = info.value; } 
+  
+  // 定義樣式
   var titleSize = '18px';
   var bodySize = '16px';
   var styleTitle = `font-family: san-serif; font-size:${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
@@ -2499,6 +2519,9 @@ function tooltipFormatter(info) {
 
   if (Array.isArray(val)) {
     var name = info.name;
+    var symbol = info.data.id || ''; // 取得代碼 (e.g. 2330.TW)
+    
+    // 數值格式化
     var chgPct = fmtFloat(val[1]);
     var close = fmtFloat(val[2]);
     var open = fmtFloat(val[4]);
@@ -2507,8 +2530,12 @@ function tooltipFormatter(info) {
     var change = fmtFloat(val[7]);
     var vol = fmtNum(val[8]);
     var valMoney = fmtNum(val[9]);
+    
+    // 顏色判斷
     var chgColor = val[1] >= 0 ? '#ff3333' : '#00cc44'; 
     var chgSign = val[1] >= 0 ? '+' : '';
+
+    // 1. 基礎股價資訊 (台股格式)
     var content = `
     <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
     <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
@@ -2516,15 +2543,32 @@ function tooltipFormatter(info) {
     <div style="${styleRow}"><span>最高價：</span><span>${high}</span></div>
     <div style="${styleRow}"><span>最低價：</span><span>${low}</span></div>
     `;
+
+    // 2. 如果是個股 (EQUITY)，加上成交量與走勢圖
     if (currentType === 'EQUITY') {
-    content += `
-      <hr style="margin:5px 0; border:0; border-top:1px dashed #ccc;">
-      <div style="${styleRow}"><span>成交量：</span><span>${vol}</span></div>
-      <div style="${styleRow}"><span>成交金額：</span><span>${valMoney}</span></div>
-    `;
+        content += `
+        <hr style="margin:5px 0; border:0; border-top:1px dashed #ccc;">
+        <div style="${styleRow}"><span>成交量：</span><span>${vol}</span></div>
+        <div style="${styleRow}"><span>成交金額：</span><span>${valMoney}</span></div>
+        `;
+        
+        // [修改] 直接顯示走勢圖，不需判斷美股
+        if (symbol) {
+            // 移除 .TW 或 .TWO，取得純數字代碼
+            var stockCode = symbol.split('.')[0];
+            var imgUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
+            
+            content += `
+            <div style="margin-top: 10px; background: #fff; padding: 2px; border: 1px solid #eee;">
+                <img src="${imgUrl}" style="width: 600px; height: auto; display: block;" alt="Loading Chart...">
+            </div>
+            `;
+        }
     }
-    return `<div style="${styleTitle}">${name}</div><div style="${styleBody}">${content}</div>`;
+    
+    return `<div style="${styleTitle}">${name} (${symbol})</div><div style="${styleBody}">${content}</div>`;
   } else {
+    // 產業或板塊的 Tooltip
     var displayVal = typeof val === 'number' ? val.toFixed(2) : 'N/A';
     return `<div style="${styleTitle}">${info.name}</div><div style="${styleBody}">板塊總權重: ${displayVal}</div>`;
   }
@@ -2591,45 +2635,80 @@ function conditionalUpdateHeatmap() {
 
 
 async function updateHeatmap() {
-  if(!chartInstance) chartInstance = echarts.init(document.getElementById('chart-container'));
+  // 檢查實例是否已存在
+  if(!chartInstance) {
+    console.log("[DEBUG] Initializing ECharts Instance...");
+    chartInstance = echarts.init(document.getElementById('chart-container'));
+
+    // ============================================================
+    // [修正] 雙擊 (Double Click) 事件監聽
+    // ============================================================
+    chartInstance.on('dblclick', function(params) {
+      console.log("🔥 [DEBUG] Double Click Event Triggered!");
+      
+      if (params.data && params.data.id) {
+        const symbol = params.data.id;
+        console.log(`🔥 [DEBUG] Symbol found: ${symbol}`);
+        
+        // [修正] 不再檢查 .TW，因為 Fugle API 回傳的代碼可能是純數字 (如 6139)
+        // 直接假設是台股代碼並進行處理
+        if (symbol) {
+            // split('.')[0] 是為了防呆 (如果未來有 .TW 也能處理，純數字也不會錯)
+            const stockCode = symbol.split('.')[0];
+            const url = `https://www.cmoney.tw/forum/stock/${stockCode}`;
+            
+            console.log(`🔥 [DEBUG] Opening URL: ${url}`);
+            window.open(url, '_blank');
+        } 
+      } else {
+        console.log("🔥 [DEBUG] No 'id' found (可能點擊到產業區塊或無代碼)");
+      }
+    });
+    // ============================================================
+    
+  } else {
+    // 實例已存在，無需重新綁定
+  }
+
   chartInstance.showLoading();
   const areaVal = document.querySelector('input[name="area_metric"]:checked').value;
   
   try {
-  const res = await fetch(`/twheatmap/api/data?market=${currentMarket}&type=${currentType}&area=${areaVal}`);
-  const treeData = await res.json();
-  
-  const option = {
-    tooltip: { 
-    formatter: tooltipFormatter,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderColor: '#ccc',
-    borderWidth: 1,
-    padding: 10
-    },
-    visualMap: {
-    type: 'continuous', dimension: 1, min: -10, max: 10,
-    inRange: { color: ['#31C950', '#FFF085', '#FB2C36'] }, 
-    show: true, orient: 'vertical', left: 10, top: 'middle',
-    itemHeight: 80, textStyle: { color: '#000'}
-    },
-    series: [{
-    type: 'treemap', 
-    data: treeData, 
-    breadcrumb: { show: true }, 
-    leafDepth: null, 
-    roam: true,
-    width: '100%', height: '100%', top: 0, bottom: 0, left: 0, right: 0,
-    levels: currentType === 'INDEX' ? [] : [
-      { itemStyle: { borderColor: '#fff', borderWidth: 0, gapWidth: 0 } },
-      { colorSaturation: [0, 1], itemStyle: { borderColor: '#555', borderWidth: 1, gapWidth: 2 }, upperLabel: { show: true, height: 30, color: '#000', fontWeight: 'bold' } },
-      { colorSaturation: [0, 1], itemStyle: { borderColor: '#fff', borderWidth: 1, gapWidth: 1 }, label: { show: true, position: 'insideTopLeft', formatter: labelFormatter, rich: { name: { fontSize: 14, fontWeight: 'bold', color: '#000'}, val: { fontSize: 12, color: '#333'} } } }
-    ],
-    label: { show: true, formatter: labelFormatterIndex, fontSize: 14, color: '#000' }
-    }]
-  };
-  chartInstance.setOption(option);
-  chartInstance.hideLoading();
+    const res = await fetch(`/twheatmap/api/data?market=${currentMarket}&type=${currentType}&area=${areaVal}`);
+    const treeData = await res.json();
+    
+    // ... (Option 設定保持不變) ...
+    const option = {
+      tooltip: { 
+        formatter: tooltipFormatter,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderColor: '#ccc',
+        borderWidth: 1,
+        padding: 10
+      },
+      visualMap: {
+        type: 'continuous', dimension: 1, min: -10, max: 10,
+        inRange: { color: ['#31C950', '#FFF085', '#FB2C36'] }, 
+        show: true, orient: 'vertical', left: 10, top: 'middle',
+        itemHeight: 80, textStyle: { color: '#000'}
+      },
+      series: [{
+        type: 'treemap', 
+        data: treeData, 
+        breadcrumb: { show: true }, 
+        leafDepth: null, 
+        roam: true,
+        width: '100%', height: '100%', top: 0, bottom: 0, left: 0, right: 0,
+        levels: currentType === 'INDEX' ? [] : [
+          { itemStyle: { borderColor: '#fff', borderWidth: 0, gapWidth: 0 } },
+          { colorSaturation: [0, 1], itemStyle: { borderColor: '#555', borderWidth: 1, gapWidth: 2 }, upperLabel: { show: true, height: 30, color: '#000', fontWeight: 'bold' } },
+          { colorSaturation: [0, 1], itemStyle: { borderColor: '#fff', borderWidth: 1, gapWidth: 1 }, label: { show: true, position: 'insideTopLeft', formatter: labelFormatter, rich: { name: { fontSize: 14, fontWeight: 'bold', color: '#000'}, val: { fontSize: 12, color: '#333'} } } }
+        ],
+        label: { show: true, formatter: labelFormatterIndex, fontSize: 14, color: '#000' }
+      }]
+    };
+    chartInstance.setOption(option);
+    chartInstance.hideLoading();
   } catch(e) { console.error(e); }
 }
 
@@ -2692,7 +2771,6 @@ function getYahooToTradingViewUrl(symbol) {
 
 
 
-
 // [新增] 取得社群討論區連結 (CMoney / 富途)
 function getCommunityLink(symbol) {
 
@@ -2735,24 +2813,22 @@ async function updateNotify() {
 
     let tableHtml = "";
     data.rows.forEach(row => {
-      // 數值判斷
+      // 數值判斷與格式化
       let changeValue = parseFloat(row.change.replace('%', ''));
-      
       let colorClass = "neutral";
-      if (changeValue < 0) {
-        colorClass = "down";
-      } else if (changeValue > 0) {
-        colorClass = "up";
-      }
+      if (changeValue < 0) colorClass = "down";
+      else if (changeValue > 0) colorClass = "up";
       
-      // delta 顏色
+      // 格式化 change_val (加上 + 號，並保留兩位小數)
+      let changeValStr = (row.change_val > 0 ? "+" : "") + row.change_val.toFixed(2);
+      
+      // delta 顏色與數值格式化
       let deltaClass = "neutral";
-      if (row.delta > 0) {
-        deltaClass = "up";
-      } else if (row.delta < 0) {
-        deltaClass = "down";
-      }
-          
+      if (row.delta > 0) deltaClass = "up";
+      else if (row.delta < 0) deltaClass = "down";
+
+      let deltaValStr = (row.delta_val > 0 ? "+" : "") + row.delta_val.toFixed(2);
+      
       // 1. 取得 TradingView 連結 (這是原本的)
       const tvLink = getYahooToTradingViewUrl(row.symbol);
       
@@ -2761,18 +2837,19 @@ async function updateNotify() {
       
       tableHtml += `
       <tr>
-        <td class="stock-symbol-hover" data-symbol="${row.symbol}">
-           <a href="${tvLink}" target="_blank" style="text-decoration:none; color:inherit; display:block;">
+        <td class="stock-symbol-hover" data-symbol="${row.symbol}" style="padding: 0; height: 1px;">
+           <a href="${tvLink}" target="_blank" style="display: flex; flex-direction: column; justify-content: center; width: 100%; height: 100%; padding: 8px; text-decoration:none; color:inherit;">
              <div class="fw-bold">${row.symbol}</div>
              <div class="small text-muted">${row.name}</div>
            </a>
         </td>
         <td>
            <div class="fw-bold">${row.price}</div>
-           <div class="${colorClass} small">(${row.change})</div>
+           <div class="${colorClass} small">${row.change} (${changeValStr})</div>
         </td>
         <td>
-           <span class="${deltaClass}">${(row.delta * 100).toFixed(2)}%</span>
+           <div class="${deltaClass}">${(row.delta * 100).toFixed(2)}%</div>
+           <div class="${deltaClass} small">(${deltaValStr})</div>
         </td>
         <td style="padding: 0; height: 1px;">
            <a href="${commLink}" target="_blank" style="display: flex; align-items: center; width: 100%; height: 100%; padding: 8px; text-decoration:none; color:inherit;">
