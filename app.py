@@ -2805,6 +2805,16 @@ function getCommunityLink(symbol) {
 
 
 
+function playAlertSound() {
+  // 這裡使用一個簡單的提示音 Base64
+  const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+  audio.volume = 1.0; // 音量最大
+  audio.play().catch(e => console.warn("警示音被瀏覽器阻擋 (請先與頁面互動一次):", e));
+}
+
+
+
+
 async function updateNotify() {
   try {
     const res = await fetch('/api/monitor');
@@ -2812,6 +2822,10 @@ async function updateNotify() {
     document.getElementById('nt-time').innerText = data.timestamp;
 
     let tableHtml = "";
+    
+    // [新增] 用來標記是否需要發出警報聲
+    let triggerAlertSound = false;
+    
     data.rows.forEach(row => {
       // 數值判斷與格式化
       let changeValue = parseFloat(row.change.replace('%', ''));
@@ -2834,6 +2848,14 @@ async function updateNotify() {
       
       // 2. [新增] 取得社群連結
       const commLink = getCommunityLink(row.symbol);
+      
+      // ============================================================
+      // [新增] 檢查警示訊息關鍵字
+      // ============================================================
+      if (row.alert && (row.alert.includes("急拉") || row.alert.includes("急殺"))) {
+        triggerAlertSound = true;
+      }
+      // ============================================================
       
       tableHtml += `
       <tr>
@@ -2859,6 +2881,11 @@ async function updateNotify() {
       </tr>`;
     });
     document.getElementById('stock-table-body').innerHTML = tableHtml || '<tr><td colspan="4" class="text-center text-muted">無資料</td></tr>';
+
+    // [新增] 如果偵測到關鍵字，播放音效
+    if (triggerAlertSound) {
+      playAlertSound();
+    }
 
     // 新聞部分
     let newsHtml = "";
@@ -3059,7 +3086,6 @@ def api_heatmap_data():
   data_list = build_heatmap_data(df, type_filter, area_metric)
   
   print(f"[DEBUG] Heatmap data returned: {len(data_list)} items") # Trace Response
-  
   return json.dumps(data_list)
 
 
