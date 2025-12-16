@@ -2450,6 +2450,7 @@ HTML_TEMPLATE = """
        <span class="fw-bold">Monitor System</span>
        <div class="d-flex align-items-center">
          <span class="badge bg-secondary" id="nt-time">--:--</span>
+         <span id="audio-btn" class="ms-2" style="cursor:pointer; font-size:1.1rem;" onclick="tryEnableSound()" title="點擊以啟用音效">🔇</span>
          <button class="btn btn-sm btn-outline-secondary ms-2" style="padding: 0px 6px; font-size: 0.8rem;" onclick="resetMonitor()">Reset</button>
        </div>
     </div>
@@ -2805,11 +2806,89 @@ function getCommunityLink(symbol) {
 
 
 
-function playAlertSound() {
-  // 這裡使用一個簡單的提示音 Base64
+// [新增] 音效狀態旗標
+let isSoundEnabled = false;
+
+
+
+
+// [新增] 嘗試啟用音效 (解鎖瀏覽器限制)
+function tryEnableSound() {
   const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
-  audio.volume = 1.0; // 音量最大
-  audio.play().catch(e => console.warn("警示音被瀏覽器阻擋 (請先與頁面互動一次):", e));
+  audio.volume = 0; // 靜音播放，僅為了取得權限
+  
+  audio.play().then(() => {
+    // 播放成功，代表已取得權限
+    isSoundEnabled = true;
+    const btn = document.getElementById('audio-btn');
+    if(btn) {
+        btn.innerText = "🔊";
+        btn.title = "音效已啟用 (點擊測試)";
+        btn.style.color = "#198754"; // 綠色
+    }
+    console.log("[System] Audio Autoplay Unlocked!");
+  }).catch(e => {
+    console.warn("音效啟用失敗 (需使用者互動):", e);
+  });
+}
+
+
+
+
+// [修改] 警示音效函式 (增強版)
+function playAlertSound() {
+  const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+  audio.volume = 1.0; 
+  
+  audio.play().then(() => {
+    // 如果這次播放成功，順便更新 UI 狀態
+    if (!isSoundEnabled) {
+        isSoundEnabled = true;
+        document.getElementById('audio-btn').innerText = "🔊";
+        document.getElementById('audio-btn').style.color = "#198754";
+    }
+  }).catch(e => {
+    console.warn("警示音被阻擋，請點擊頁面以啟用音效");
+    // 讓喇叭圖示變紅閃爍，提示使用者去點擊
+    const btn = document.getElementById('audio-btn');
+    if(btn) {
+        btn.style.color = "#dc3545"; // 紅色
+        btn.innerText = "🔇";
+        // 簡單的閃爍效果
+        setTimeout(() => btn.style.color = "", 300);
+        setTimeout(() => btn.style.color = "#dc3545", 600);
+    }
+  });
+}
+
+
+
+
+let flashInterval = null;
+const originalTitle = document.title; // 記住原本的標題 (🚀Stock Dashboard)
+
+// [新增] 開始閃爍標題
+function startTabFlashing() {
+  if (flashInterval) return; // 如果已經在閃爍，就不用重複啟動
+
+  let showWarning = true;
+  flashInterval = setInterval(() => {
+    // 在 "原本標題" 與 "警示文字" 之間切換
+    document.title = showWarning ? "🔴【急拉/急殺警示】🔴" : originalTitle;
+    showWarning = !showWarning;
+  }, 800); // 每 0.8 秒切換一次
+}
+
+
+
+
+// [新增] 停止閃爍標題 (回復原狀)
+function stopTabFlashing() {
+  if (flashInterval) {
+    clearInterval(flashInterval);
+    flashInterval = null;
+    document.title = originalTitle; // 強制還原標題
+  }
 }
 
 
@@ -2885,6 +2964,7 @@ async function updateNotify() {
     // [新增] 如果偵測到關鍵字，播放音效
     if (triggerAlertSound) {
       playAlertSound();
+      startTabFlashing();
     }
 
     // 新聞部分
@@ -3056,6 +3136,20 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(conditionalUpdateHeatmap, 300000);  // 每 5 分鐘檢查一次
   setInterval(updateNotify, 120000);
 });
+
+
+
+
+// [修改] 全域點擊監聽
+document.addEventListener('click', function globalInteract() {
+  // 1. 嘗試解鎖音效
+  if (!isSoundEnabled) {
+      tryEnableSound();
+  }
+
+  // 2. [新增] 停止標題閃爍 (代表使用者已經看到並處理了)
+  stopTabFlashing();  
+}, { once: false });
 </script>
 
 <div id="stock-chart-popup" class="stock-popup"></div>
@@ -3086,6 +3180,7 @@ def api_heatmap_data():
   data_list = build_heatmap_data(df, type_filter, area_metric)
   
   print(f"[DEBUG] Heatmap data returned: {len(data_list)} items") # Trace Response
+  
   return json.dumps(data_list)
 
 
