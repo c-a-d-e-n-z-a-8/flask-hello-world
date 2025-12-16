@@ -2779,7 +2779,7 @@ function getCommunityLink(symbol) {
   const communityMap = {
     '^TWII': 'https://www.cmoney.tw/forum/market',      // 加權指數
     '^TWOII': 'https://www.cmoney.tw/forum/stock/TWC00',      // 櫃買指數
-    'FITX': 'https://www.cmoney.tw/forum/futures/TXF1',      // 台指期
+    'FITX': 'https://www.cmoney.tw/forum/futures/TXF1?s=p',      // 台指期
     '^GSPC': 'https://www.futunn.com/hk/index/.SPX-US/community',           // S&P 500
     '^IXIC': 'https://www.futunn.com/hk/index/.IXIC-US',        // Nasdaq Composite
     '^DJI': 'https://www.futunn.com/hk/index/.DJI-US',            // 道瓊
