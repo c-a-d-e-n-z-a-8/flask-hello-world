@@ -2013,9 +2013,9 @@ class StockMonitor:
 
     # 輔助函數:根據箭頭自動添加顏色 class
     def styled_msg(text):
-      if '↑' in text:
+      if '↗' in text:
         return f'<span class="up">{text}</span>'
-      elif '↓' in text:
+      elif '↘' in text:
         return f'<span class="down">{text}</span>'
       elif '-Fall' in text:
         return f'<span class="down">{text}</span>'
@@ -2027,24 +2027,24 @@ class StockMonitor:
     # --------------------------
     if price_low is not None:
       if (price > price_low) and (price_1 <= price_low):
-        msgs.append(styled_msg(f"↑L({price_low})"))
+        msgs.append(styled_msg(f"↗L({price_low})"))
       if (price < price_low) and (price_1 >= price_low):
-        msgs.append(styled_msg(f"↓L({price_low})"))
+        msgs.append(styled_msg(f"↘L({price_low})"))
 
     if price_high is not None:
       if (price > price_high) and (price_1 <= price_high):
-        msgs.append(styled_msg(f"↑H({price_high})"))
+        msgs.append(styled_msg(f"↗H({price_high})"))
       if (price < price_high) and (price_1 >= price_high):
-        msgs.append(styled_msg(f"↓H({price_high})"))
+        msgs.append(styled_msg(f"↘H({price_high})"))
 
     # --------------------------
     # 2. SMA10 / SMA20 / SMA60 / SMA200 Trend Cross
     # --------------------------
     if ma10_1 is not None:
       if (price > ma10) and (price_1 <= ma10_1):
-        msgs.append(styled_msg(f"↑MA10({ma10})"))
+        msgs.append(styled_msg(f"↗MA10({ma10})"))
       if (price < ma10) and (price_1 >= ma10_1):
-        text = f"↓MA10({ma10})"
+        text = f"↘MA10({ma10})"
         if hasattr(self, "macd_w_is_fall"):
           if symbol in self.macd_w_is_fall and self.macd_w_is_fall[symbol] is True:
             text += " MACD-Fall"
@@ -2052,45 +2052,45 @@ class StockMonitor:
 
     if ma20_1 is not None:
       if (price > ma20) and (price_1 <= ma20_1):
-        msgs.append(styled_msg(f"↑MA20({ma20})"))
+        msgs.append(styled_msg(f"↗MA20({ma20})"))
       if (price < ma20) and (price_1 >= ma20_1):
-        text = f"↓MA20({ma20})"
+        text = f"↘MA20({ma20})"
         if ma10 is not None and ma10 > ma20:
           text += " JUMP-Fall"
         msgs.append(styled_msg(text))
 
     if ma60_1 is not None:
       if (price > ma60) and (price_1 <= ma60_1):
-        msgs.append(styled_msg(f"↑MA60({ma60})"))
+        msgs.append(styled_msg(f"↗MA60({ma60})"))
       if (price < ma60) and (price_1 >= ma60_1):
-        msgs.append(styled_msg(f"↓MA60({ma60})"))
+        msgs.append(styled_msg(f"↘MA60({ma60})"))
 
     if ma200_1 is not None:
       if (price > ma200) and (price_1 <= ma200_1):
-        msgs.append(styled_msg(f"↑MA200({ma200})"))
+        msgs.append(styled_msg(f"↗MA200({ma200})"))
       if (price < ma200) and (price_1 >= ma200_1):
-        msgs.append(styled_msg(f"↓MA200({ma200})"))
+        msgs.append(styled_msg(f"↘MA200({ma200})"))
 
     # --------------------------
     # 3. SMA Crossing (MA10-20, MA20-60, MA10-60)
     # --------------------------
     if ma10_1 is not None and ma60_1 is not None:
       if (ma10 > ma60) and (ma10_1 <= ma60_1):
-        msgs.append(styled_msg(f"MA10↑60({ma10},{ma60})"))
+        msgs.append(styled_msg(f"MA10↗60({ma10},{ma60})"))
       if (ma10 < ma60) and (ma10_1 >= ma60_1):
-        msgs.append(styled_msg(f"MA10↓60({ma10},{ma60})"))
+        msgs.append(styled_msg(f"MA10↘60({ma10},{ma60})"))
 
     if ma10_1 is not None and ma20_1 is not None:
       if (ma10 > ma20) and (ma10_1 <= ma20_1):
-        msgs.append(styled_msg(f"MA10↑20({ma10},{ma20})"))
+        msgs.append(styled_msg(f"MA10↗20({ma10},{ma20})"))
       if (ma10 < ma20) and (ma10_1 >= ma20_1):
-        msgs.append(styled_msg(f"MA10↓20({ma10},{ma20})"))
+        msgs.append(styled_msg(f"MA10↘20({ma10},{ma20})"))
 
     if ma20_1 is not None and ma60_1 is not None:
       if (ma20 > ma60) and (ma20_1 <= ma60_1):
-        msgs.append(styled_msg(f"MA20↑60({ma20},{ma60})"))
+        msgs.append(styled_msg(f"MA20↗60({ma20},{ma60})"))
       if (ma20 < ma60) and (ma20_1 >= ma60_1):
-        msgs.append(styled_msg(f"MA20↓60({ma20},{ma60})"))
+        msgs.append(styled_msg(f"MA20↘60({ma20},{ma60})"))
 
     # --------------------------
     # 4. 回傳結果
