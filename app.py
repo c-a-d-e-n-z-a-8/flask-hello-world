@@ -2421,12 +2421,59 @@ HTML_TEMPLATE = """
   .stock-symbol-hover:hover {
     background-color: #e3f2fd;
   }
+  
+  /* [新增] Tooltip 圖片預設樣式 (電腦版) */
+  .chart-tooltip-img {
+    width: 600px;
+    height: auto;
+    display: block;
+  }
+
+  /* ========================================= */
+  /* [核心修正] Mobile Mode 強制滿版樣式 */
+  /* ========================================= */
+  
+  /* 1. Body 開放滾動 */
+  body.mobile-mode { 
+    overflow: auto !important; 
+  }
+
+  /* 2. Monitor 區塊：固定高度、移除左邊框、增加下分隔線 */
+  body.mobile-mode .notify-panel { 
+    height: 500px;      
+    overflow-y: auto; 
+    border-left: none; 
+    border-bottom: 5px solid #ddd;
+  }
+
+  /* 3. Heatmap 區塊：固定高度 */
+  body.mobile-mode #chart-container {
+    height: 500px;      
+  }
+
+  /* 4. Tooltip 圖片縮小 */
+  body.mobile-mode .chart-tooltip-img {
+    width: 200px !important;
+  }
+
+  /* 5. [關鍵修正] 強制改變排列與寬度 */
+  body.mobile-mode .main-row {
+    flex-direction: column-reverse !important; /* 讓 Monitor 跑到上面 */
+  }
+
+  /* 這裡就是解決無法滿版的核心代碼 */
+  body.mobile-mode .main-row > div {
+    width: 100% !important;     /* 無視 col-lg-* 的寬度限制 */
+    max-width: 100% !important; /* 確保不被限制 */
+    flex: 0 0 100% !important;  /* 強制 Flex 佔滿整行 */
+    padding: 0 !important;      /* 移除欄位預設間距，達成邊對邊滿版 */
+  }
   </style>
 </head>
 <body>
 
 <div class="container-fluid">
-  <div class="row">
+  <div class="row main-row">
   <div class="col-lg-8">
     <div class="heatmap-header">
       <div class="btn-group btn-group-sm">
@@ -2511,12 +2558,13 @@ function tooltipFormatter(info) {
   var val = info.data.value; 
   if (!val) { val = info.value; } 
   
-  // 定義樣式
   var titleSize = '18px';
   var bodySize = '16px';
   var styleTitle = `font-family: san-serif; font-size:${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
-  var styleBody = `color:#000; font-size:${bodySize}; line-height:1.8;`;
-  var styleRow = 'display:flex; justify-content:space-between; min-width:200px;';
+  var styleBody = `color:#000; font-size:${bodySize}; line-height:1.6;`;
+  
+  // [修改] 移除 min-width 設定，因為垂直排列不需要撐開寬度
+  var styleRow = 'display:flex; justify-content:space-between;'; 
 
   if (Array.isArray(val)) {
     var name = info.name;
@@ -2536,40 +2584,50 @@ function tooltipFormatter(info) {
     var chgColor = val[1] >= 0 ? '#ff3333' : '#00cc44'; 
     var chgSign = val[1] >= 0 ? '+' : '';
 
-    // 1. 基礎股價資訊 (台股格式)
-    var content = `
-    <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
-    <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
-    <div style="${styleRow}"><span>開盤價：</span><span>${open}</span></div>
-    <div style="${styleRow}"><span>最高價：</span><span>${high}</span></div>
-    <div style="${styleRow}"><span>最低價：</span><span>${low}</span></div>
+    var textContent = `
+      <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
+      <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
+      <div style="${styleRow}"><span>開盤價：</span><span>${open}</span></div>
+      <div style="${styleRow}"><span>最高價：</span><span>${high}</span></div>
+      <div style="${styleRow}"><span>最低價：</span><span>${low}</span></div>
     `;
 
-    // 2. 如果是個股 (EQUITY)，加上成交量與走勢圖
     if (currentType === 'EQUITY') {
-        content += `
+        textContent += `
         <hr style="margin:5px 0; border:0; border-top:1px dashed #ccc;">
         <div style="${styleRow}"><span>成交量：</span><span>${vol}</span></div>
         <div style="${styleRow}"><span>成交金額：</span><span>${valMoney}</span></div>
         `;
+    }
+
+    var imageContent = "";
+    if (currentType === 'EQUITY' && symbol) {
+        var stockCode = symbol.split('.')[0];
+        var imgUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
         
-        // [修改] 直接顯示走勢圖，不需判斷美股
-        if (symbol) {
-            // 移除 .TW 或 .TWO，取得純數字代碼
-            var stockCode = symbol.split('.')[0];
-            var imgUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
-            
-            content += `
-            <div style="margin-top: 10px; background: #fff; padding: 2px; border: 1px solid #eee;">
-                <img src="${imgUrl}" style="width: 600px; height: auto; display: block;" alt="Loading Chart...">
-            </div>
-            `;
-        }
+        // [修改] 改用 margin-top (垂直堆疊)，並讓圖片置中
+        imageContent = `
+          <div style="margin-top: 10px; background: #fff; padding: 2px; border: 1px solid #eee; text-align: center;">
+             <img src="${imgUrl}" class="chart-tooltip-img" alt="Chart" style="display:inline-block;">
+          </div>
+        `;
+    }
+
+    var finalContent = "";
+    if (imageContent) {
+        // [修改] 移除 display: flex，直接垂直排列
+        finalContent = `
+          <div>
+             <div style="${styleBody}">${textContent}</div>
+             ${imageContent}
+          </div>
+        `;
+    } else {
+        finalContent = `<div style="${styleBody}">${textContent}</div>`;
     }
     
-    return `<div style="${styleTitle}">${name} (${symbol})</div><div style="${styleBody}">${content}</div>`;
+    return `<div style="${styleTitle}">${name} (${symbol})</div>${finalContent}`;
   } else {
-    // 產業或板塊的 Tooltip
     var displayVal = typeof val === 'number' ? val.toFixed(2) : 'N/A';
     return `<div style="${styleTitle}">${info.name}</div><div style="${styleBody}">板塊總權重: ${displayVal}</div>`;
   }
@@ -2641,47 +2699,33 @@ async function updateHeatmap() {
     console.log("[DEBUG] Initializing ECharts Instance...");
     chartInstance = echarts.init(document.getElementById('chart-container'));
 
-    // ============================================================
-    // [修正] 雙擊 (Double Click) 事件監聽
-    // ============================================================
+    // 雙擊事件 (維持不變)
     chartInstance.on('dblclick', function(params) {
-      console.log("🔥 [DEBUG] Double Click Event Triggered!");
-      
       if (params.data && params.data.id) {
         const symbol = params.data.id;
-        console.log(`🔥 [DEBUG] Symbol found: ${symbol}`);
-        
-        // [修正] 不再檢查 .TW，因為 Fugle API 回傳的代碼可能是純數字 (如 6139)
-        // 直接假設是台股代碼並進行處理
         if (symbol) {
-            // split('.')[0] 是為了防呆 (如果未來有 .TW 也能處理，純數字也不會錯)
             const stockCode = symbol.split('.')[0];
-            const url = `https://www.cmoney.tw/forum/stock/${stockCode}`;
-            
-            console.log(`🔥 [DEBUG] Opening URL: ${url}`);
-            window.open(url, '_blank');
+            window.open(`https://www.cmoney.tw/forum/stock/${stockCode}`, '_blank');
         } 
-      } else {
-        console.log("🔥 [DEBUG] No 'id' found (可能點擊到產業區塊或無代碼)");
       }
     });
-    // ============================================================
-    
-  } else {
-    // 實例已存在，無需重新綁定
   }
 
   chartInstance.showLoading();
   const areaVal = document.querySelector('input[name="area_metric"]:checked').value;
   
+  // [新增] 判斷是否為手機模式
+  const isMobile = document.body.classList.contains('mobile-mode');
+
   try {
     const res = await fetch(`/twheatmap/api/data?market=${currentMarket}&type=${currentType}&area=${areaVal}`);
     const treeData = await res.json();
     
-    // ... (Option 設定保持不變) ...
     const option = {
       tooltip: { 
         formatter: tooltipFormatter,
+        // [優化] 手機版 tooltip 限制在容器內，避免超出螢幕
+        confine: true, 
         backgroundColor: 'rgba(255, 255, 255, 0.95)',
         borderColor: '#ccc',
         borderWidth: 1,
@@ -2698,7 +2742,10 @@ async function updateHeatmap() {
         data: treeData, 
         breadcrumb: { show: true }, 
         leafDepth: null, 
-        roam: true,
+        
+        // [關鍵修正] 如果是手機模式，關閉 roam (拖曳/縮放)，讓使用者可以滑動網頁
+        roam: !isMobile, 
+        
         width: '100%', height: '100%', top: 0, bottom: 0, left: 0, right: 0,
         levels: currentType === 'INDEX' ? [] : [
           { itemStyle: { borderColor: '#fff', borderWidth: 0, gapWidth: 0 } },
@@ -3150,6 +3197,44 @@ document.addEventListener('click', function globalInteract() {
   // 2. [新增] 停止標題閃爍 (代表使用者已經看到並處理了)
   stopTabFlashing();  
 }, { once: false });
+
+
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  
+  // [新增] 裝置偵測邏輯
+  function checkMobileMode() {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    
+    // 判斷是否為 Android, iOS (iPhone/iPad/iPod) 或其他行動裝置
+    // 這裡我們把 iPad 也強制歸類為 Mobile Mode，以符合您的需求
+    const isMobile = /android|ipad|iphone|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+    
+    // 或者：如果螢幕寬度真的非常小 (例如 < 768px)，也強制切換
+    const isSmallScreen = window.innerWidth < 768;
+
+    if (isMobile || isSmallScreen) {
+      document.body.classList.add('mobile-mode');
+      console.log("[System] Mobile Mode Activated (Reason: Device or Screen Size)");
+    } else {
+      document.body.classList.remove('mobile-mode');
+      console.log("[System] Desktop Mode Activated");
+    }
+  }
+
+  // 初始化時執行一次
+  checkMobileMode();
+  
+  // 當視窗縮放時也重新檢查 (選用，方便電腦測試)
+  window.addEventListener('resize', checkMobileMode);
+
+  // ... (原本的初始化代碼) ...
+  updateHeatmap();
+  updateNotify();
+  setInterval(conditionalUpdateHeatmap, 300000);
+  setInterval(updateNotify, 120000);
+});
 </script>
 
 <div id="stock-chart-popup" class="stock-popup"></div>
