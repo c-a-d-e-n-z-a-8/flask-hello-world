@@ -64,103 +64,101 @@
             fetch('/api/random')
                 .then(response => response.json())
                 .then(data => {
+                    // 1. 更新畫面文字
                     document.getElementById('no').innerText = data.no || '';
                     document.getElementById('no-link').href =
                         'https://sutian.moe.edu.tw/zh-hant/su/' + (data.no || '') + '/';
                     document.getElementById('content').innerHTML = data.html || '';
-
-                    const audio = document.getElementById('audio');
-                    if (data.audio_url) {
-                        audio.src = data.audio_url;
-                        //audio.classList.remove('d-none');
-                        audio.play();
-                    } else {
-                        audio.src = '';
-                        audio.classList.add('d-none');
-                    }
                     document.getElementById('alert').classList.toggle('d-none', !!data.no);
 
-                    let audios = Array.from(document.querySelectorAll('audio'));
-                    current = 0;
-                    audioLen = audios.length;
-                    
-                    /**
-                    let fallbackTimeout = setTimeout(() => {
-                        let timeout = audios.length > 0 ? audios.length * 5000 : 3000;
-                        console.log('S1')
-                        startAutoUpdate(timeout);
-                    }, 1000);
-                    **/
-                    console.log('S1')
-                    startAutoUpdate(3000);
+                    // 2. 建立播放清單 (只存網址)
+                    let playlistUrls = [];
 
-                    // 計算所有 audio 的總時長
-                    let totalDuration = 0;
-                    let loadedCount = 0;
-
-                    if (audios.length > 0) {
-                        audios.forEach(a => {
-                            // 有些 audio 可能還沒載入 duration
-                            a.onloadedmetadata = function() {
-                                totalDuration += a.duration;
-                                //console.log(a.duration);
-                                loadedCount++;
-                                if (loadedCount === audios.length) {
-                                    // 所有 audio 都載入完畢
-                                    // 設定自動更新時間（加上一些緩衝，例如 +3秒
-                                    console.log('S2')
-                                    startAutoUpdate((totalDuration + 3) * 1000);
-                                }
-                            };
-                            // 若已載入
-                            if (a.readyState >= 1) {
-                                totalDuration += a.duration;
-                                loadedCount++;
-                            }
-                        });
-                        // 若全部都已載入
-                        if (loadedCount === audios.length) {
-                            console.log('S3')
-                            startAutoUpdate((totalDuration + 3) * 1000);
-                        }
-
-                    } else {
-                        // 沒有 audio，預設 3 秒
-                        //clearTimeout(fallbackTimeout);
-                        console.log('S4')
-                        startAutoUpdate(3000);
+                    // (A) 主單字語音 (如果有)
+                    if (data.audio_url) {
+                        playlistUrls.push(data.audio_url);
                     }
 
-                    function playNextAudio() {
-                        if (current >= audios.length) {
+                    // (B) 例句語音 (修正點：正確抓取 <source> 內的 src)
+                    let subAudios = document.querySelectorAll('#content audio');
+                    subAudios.forEach(el => {
+                        let url = el.src; // 先試抓 audio src
+                        
+                        // 如果 audio 沒 src，就去抓裡面的 <source> 標籤
+                        if (!url) {
+                            let sourceTag = el.querySelector('source');
+                            if (sourceTag) {
+                                url = sourceTag.src;
+                            }
+                        }
+
+                        if (url) {
+                            playlistUrls.push(url);
+                        }
+                        
+                        // 隱藏原本的播放器
+                        el.style.display = 'none'; 
+                    });
+
+                    // 3. 取得主播放器
+                    const mainPlayer = document.getElementById('audio');
+
+                    // 如果完全沒聲音，3秒後換下一張
+                    if (playlistUrls.length === 0) {
+                        mainPlayer.classList.add('d-none');
+                        startAutoUpdate(3000);
+                        return;
+                    }
+
+                    // 4. 定義播放邏輯
+                    let currentIndex = 0;
+
+                    function playNext() {
+                        if (currentIndex >= playlistUrls.length) {
+                            // 全部播完
+                            startAutoUpdate(3000);
                             return;
                         }
-                        document.getElementById('alert').classList.add('d-none');
-                        //audios.forEach(a => { a.pause(); a.currentTime = 0; });
-                        audios.forEach((a, idx) => {
-                            if (idx !== current) {
-                                a.pause();
-                                a.currentTime = 0;
-                            }
-                        });
-                        const audio = audios[current];
-                        audio.currentTime = 0;
-                        audio.play().then(() => {
-                            // 播放成功
-                        }).catch(err => {
-                            console.warn('audio play error:', err);
-                            current++;
-                            playNextAudio();
-                        });
-                        audio.onended = function() {
+
+                        // 設定網址
+                        mainPlayer.src = playlistUrls[currentIndex];
+                        mainPlayer.classList.remove('d-none');
+
+                        // 播放
+                        let playPromise = mainPlayer.play();
+                        
+                        if (playPromise !== undefined) {
+                            playPromise.then(() => {
+                                // 播放開始
+                            }).catch(error => {
+                                console.warn('播放失敗，跳過:', error);
+                                currentIndex++;
+                                playNext();
+                            });
+                        }
+
+                        // 監聽結束事件
+                        mainPlayer.onended = function() {
                             if (!isPaused) {
-                                current++;
-                                playNextAudio();
+                                currentIndex++;
+                                playNext();
                             }
                         };
+                        
+                        // 監聽錯誤事件
+                        mainPlayer.onerror = function() {
+                            console.warn('載入錯誤，跳過');
+                            currentIndex++;
+                            playNext();
+                        }
                     }
 
-                    playNextAudio();
+                    // 5. 開始播放
+                    playNext();
+                })
+                .catch(err => {
+                    console.error('Fetch error:', err);
+                    startAutoUpdate(3000);
                 });
         }
 
@@ -211,3 +209,4 @@
     </script>
 </body>
 </html>
+
