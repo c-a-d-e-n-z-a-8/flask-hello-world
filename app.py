@@ -2921,7 +2921,7 @@ function startTabFlashing() {
   let showWarning = true;
   flashInterval = setInterval(() => {
     // 在 "原本標題" 與 "警示文字" 之間切換
-    document.title = showWarning ? "🔴【急拉/急殺警示】🔴" : originalTitle;
+    document.title = showWarning ? "⚠️【急拉/急殺警示】" : originalTitle;
     showWarning = !showWarning;
   }, 800); // 每 0.8 秒切換一次
 }
