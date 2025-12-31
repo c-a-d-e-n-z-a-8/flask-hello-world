@@ -1582,6 +1582,10 @@ def analyze():
 TWSE_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0001"
 OTC_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0043"
 
+# S&P 500 相關設定
+SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+SP500_DATA_URL = "https://www.slickcharts.com/sp500"
+
 INDEX_LIST =  ["^TWII", "^TWOII", "00631L.TW", "^GSPC", "^RUT", "^N225", "^KS11", "VOO", "QQQ", "QLD", "000300.SS"]
 
 HEADERS_FUGLE = {
@@ -1602,6 +1606,9 @@ INDUSTRY_MAP = {
   "38": "居家生活", "80": "管理股票",
 }
 
+# GICS Sector 快取 (只讀取一次)
+GICS_SECTOR_CACHE = {}
+
 PTT_AUTHORS = ["sky22485816", "a000000000", "waitrop", "zmcx16", "Robertshih", "Test520", "zesonpso", "MrChen", "phcebus", "f204137", "a0808996", "IBIZA", "leo15824", "tosay", "LDPC", "nina801105", "mrp", "minazukimaya"]
 
 DATA_CACHE = {"twse": None, "otc": None, "last_update": 0}
@@ -1618,62 +1625,247 @@ def industry_label(code) -> str:
 
 
 
+def init_sp500_sectors():
+  """初始化 S&P 500 的 GICS Sector 對應表 (只執行一次)"""
+  global GICS_SECTOR_CACHE
+  
+  if GICS_SECTOR_CACHE:  # 如果已經載入過就直接返回
+    print("[DEBUG] GICS Sector Cache already loaded.")
+    return
+  
+  try:
+    print("[DEBUG] Fetching S&P 500 GICS Sectors from Wikipedia...")
+    
+    # 使用 curl_cffi 的 impersonate 參數
+    r = requests.get(
+      SP500_WIKI_URL, 
+      impersonate="chrome120",
+      timeout=15
+    )
+    
+    print(f"[DEBUG] Wikipedia Response: {r.status_code}")
+    
+    if r.status_code == 200:
+      # 使用 pandas 讀取 HTML 表格
+      df_list = pd.read_html(r.text)
+      
+      if df_list:
+        df = df_list[0]  # 取第一個表格
+        
+        print(f"[DEBUG] Wikipedia Table Columns: {df.columns.tolist()}")
+        
+        # 建立 Symbol -> GICS Sector 的對應
+        for _, row in df.iterrows():
+          try:
+            symbol = str(row.get('Symbol', '')).strip()
+            sector = str(row.get('GICS Sector', 'Unknown')).strip()
+            
+            if symbol and symbol != 'nan':
+              GICS_SECTOR_CACHE[symbol] = sector
+          except Exception as e:
+            continue
+        
+        print(f"[DEBUG] GICS Sectors loaded: {len(GICS_SECTOR_CACHE)} symbols")
+      else:
+        print("[WARN] No tables found in Wikipedia page")
+    else:
+      print(f"[WARN] Wikipedia fetch failed: {r.status_code}")
+      
+  except Exception as e:
+    print(f"[ERROR] Failed to load GICS Sectors: {e}")
+    traceback.print_exc()
+
+
+
+
+def industry_label_us(symbol: str) -> str:
+  """根據 Symbol 查詢對應的 GICS Sector"""
+  return GICS_SECTOR_CACHE.get(symbol, "Unknown")
+
+
+
+
 def fetch_heatmap_data():
   now = time.time()
   if (DATA_CACHE["twse"] is None) or (now - DATA_CACHE["last_update"] > CACHE_DURATION):
     try:
-      print(f"[{time.ctime()}] [DEBUG] Starting Fugle Heatmap Update...") 
+      print(f"[{time.ctime()}] [DEBUG] Starting Heatmap Update...") 
+      
+      # === 台股資料 (原有邏輯) ===
       r_twse = requests.get(TWSE_URL, headers=HEADERS_FUGLE, timeout=15)
       r_otc = requests.get(OTC_URL, headers=HEADERS_FUGLE, timeout=15)
       
-      print(f"[DEBUG] Fugle Response - TWSE: {r_twse.status_code}, OTC: {r_otc.status_code}") # Check API Status
+      print(f"[DEBUG] Fugle Response - TWSE: {r_twse.status_code}, OTC: {r_otc.status_code}")
 
       if r_twse.status_code == 200:
         data_twse = r_twse.json().get("data", [])
         DATA_CACHE["twse"] = pd.DataFrame(data_twse)
-        print(f"[DEBUG] TWSE Data loaded: {len(data_twse)} rows") # Check data size
+        print(f"[DEBUG] TWSE Data loaded: {len(data_twse)} rows")
       
       if r_otc.status_code == 200:
         data_otc = r_otc.json().get("data", [])
         DATA_CACHE["otc"] = pd.DataFrame(data_otc)
-        print(f"[DEBUG] OTC Data loaded: {len(data_otc)} rows") # Check data size
+        print(f"[DEBUG] OTC Data loaded: {len(data_otc)} rows")
+
+      # === [新增] S&P 500 資料 ===
+      print("[DEBUG] Fetching S&P 500 data from SlickCharts...")
+      try:
+        # 使用 curl_cffi 的 impersonate 參數
+        r_sp500 = requests.get(
+          SP500_DATA_URL, 
+          impersonate="chrome120",
+          timeout=15
+        )
+        
+        print(f"[DEBUG] SlickCharts Response: {r_sp500.status_code}")
+        
+        if r_sp500.status_code == 200:
+          soup = BS(r_sp500.text, 'html.parser')
+          
+          # 找到 <div class="col-lg-7"> 內的表格
+          target_div = soup.find('div', class_='col-lg-7')
+          
+          if target_div:
+            table = target_div.find('table')
+            
+            if table:
+              # 解析表格
+              rows = []
+              tbody = table.find('tbody')
+              
+              if tbody:
+                for idx, tr in enumerate(tbody.find_all('tr')):
+                  cols = tr.find_all('td')
+                  
+                  if len(cols) >= 7:
+                    try:
+                      # SlickCharts 表格結構:
+                      # 0: #(Rank), 1: Company, 2: Symbol, 3: Weight, 
+                      # 4: Price, 5: Chg, 6: % Chg
+                      
+                      company = cols[1].text.strip()
+                      symbol = cols[2].text.strip()
+                      weight_raw = cols[3].text.strip()
+                      price_raw = cols[4].text.strip()
+                      change_raw = cols[5].text.strip()
+                      pct_change_raw = cols[6].text.strip()
+                      
+                      # === [關鍵修正] 正負號判斷邏輯 ===
+                      
+                      # Weight 處理
+                      weight_str = weight_raw.replace('%', '').strip()
+                      weight = float(weight_str)
+                      
+                      # Price 處理
+                      price_str = price_raw.replace('$', '').replace(',', '').strip()
+                      price = float(price_str)
+                      
+                      # Change 處理：保留原始正負號
+                      change_str = change_raw.replace('$', '').replace(',', '').strip()
+                      change = float(change_str)  # 直接轉換，保留 +/- 號
+                      
+                      # % Change 處理：移除括號和百分比符號，但保留原始正負號
+                      # 從 Chg 欄位判斷正負（因為 % Chg 的括號不代表負數）
+                      pct_change_str = pct_change_raw.replace('(', '').replace(')', '').replace('%', '').strip()
+                      pct_change = float(pct_change_str)
+                      
+                      # [重要] 根據 Chg 的正負來決定 % Chg 的正負
+                      if change < 0:
+                        pct_change = -abs(pct_change)
+                      else:
+                        pct_change = abs(pct_change)
+                      
+                      # 取得 GICS Sector
+                      sector = industry_label_us(symbol)
+                      
+                      rows.append({
+                        "symbol": symbol,
+                        "name": company,
+                        "closePrice": price,
+                        "change": change,
+                        "changePercent": pct_change,
+                        "weight": weight,
+                        "industry": sector,
+                        "type": "EQUITY"
+                      })
+                      
+                      # 調試：打印前 3 筆
+                      if idx < 3:
+                        print(f"[DEBUG] {symbol}: Change={change}, %Chg={pct_change}, Weight={weight}")
+                      
+                    except (ValueError, IndexError, AttributeError) as e:
+                      print(f"[WARN] Parsing row {idx} error: {e}")
+                      print(f"[WARN] Raw cols: {[c.text.strip() for c in cols[:7]]}")
+                      continue
+              
+              if rows:
+                DATA_CACHE["sp500"] = pd.DataFrame(rows)
+                print(f"[DEBUG] S&P 500 Data loaded: {len(rows)} rows")
+              else:
+                print("[WARN] No valid rows parsed from SlickCharts table")
+            else:
+              print("[WARN] Table not found in target div")
+          else:
+            print("[WARN] <div class='col-lg-7'> not found")
+        else:
+          print(f"[WARN] SlickCharts fetch failed: {r_sp500.status_code}")
+          
+      except Exception as e:
+        print(f"[ERROR] SlickCharts fetch error: {e}")
+        traceback.print_exc()
 
       DATA_CACHE["last_update"] = now
       print(f"[{time.ctime()}] [DEBUG] Heatmap Cache Updated.")
+      
     except Exception as e:
       print(f"[ERROR] Fetching heatmap data failed: {e}")
-      traceback.print_exc() # Print full stack trace
-  else:
-      # print("[DEBUG] Using Cached Heatmap Data") # Optional: Uncomment if you want to know when cache is hit
-      pass
+      traceback.print_exc()
 
 
 
 
 def get_clean_dataframe(market):
   fetch_heatmap_data()
-  df = DATA_CACHE["twse"] if market == "twse" else DATA_CACHE["otc"]
+  
+  if market == "sp500":
+    df = DATA_CACHE.get("sp500")
+  elif market == "twse":
+    df = DATA_CACHE.get("twse")
+  else:
+    df = DATA_CACHE.get("otc")
+  
   if df is None or df.empty:
     print(f"[WARN] Dataframe for {market} is empty or None.")
     return pd.DataFrame()
+
   return df.copy()
 
 
 
 
 def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
-  if df.empty: return []
+  if df.empty: 
+    return []
 
   data = df[df["type"] == type_filter].copy()
+  
   if data.empty: 
-      print(f"[DEBUG] No data found for type_filter: {type_filter}")
-      return []
+    print(f"[DEBUG] No data found for type_filter: {type_filter}")
+    return []
 
-  size_col = "tradeValue"
-  if type_filter == "EQUITY":
-    size_col = "marketValueWeight" if area_metric == "marketValueWeight" else "tradeValueWeight"
+  # === [修改] 判斷是否為 S&P 500 ===
+  is_sp500 = "weight" in data.columns
+  
+  if is_sp500:
+    # S&P 500 使用 Weight 作為面積依據
+    size_col = "weight"
+  else:
+    # 台股邏輯 (維持不變)
+    size_col = "tradeValue"
+    if type_filter == "EQUITY":
+      size_col = "marketValueWeight" if area_metric == "marketValueWeight" else "tradeValueWeight"
 
-  # ... (Data conversion logic omitted for brevity, logic remains same) ...
+  # 數值轉換
   raw_size = data.get(size_col, pd.Series([0]*len(data)))
   if raw_size.dtype == 'object':
     raw_size = raw_size.astype(str).str.replace(',', '')
@@ -1682,16 +1874,22 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
   data["chg_pct"] = pd.to_numeric(data.get("changePercent"), errors="coerce").fillna(0)
   data["price"] = pd.to_numeric(data.get("closePrice"), errors="coerce").fillna(0)
   
-  data["open"] = pd.to_numeric(data.get("openPrice"), errors="coerce").fillna(0)
-  data["high"] = pd.to_numeric(data.get("highPrice"), errors="coerce").fillna(0)
-  data["low"] = pd.to_numeric(data.get("lowPrice"), errors="coerce").fillna(0)
-  data["change_val"] = pd.to_numeric(data.get("change"), errors="coerce").fillna(0)
-  data["vol"] = pd.to_numeric(data.get("tradeVolume"), errors="coerce").fillna(0)
-  data["val"] = pd.to_numeric(data.get("tradeValue"), errors="coerce").fillna(0)
-
-  data = data[data["size_val"] > 0]
+  # === [修改] S&P 500 沒有 Open/High/Low，給預設值 ===
+  if is_sp500:
+    data["open"] = data["price"]
+    data["high"] = data["price"]
+    data["low"] = data["price"]
+    data["vol"] = 0
+    data["val"] = 0
+  else:
+    data["open"] = pd.to_numeric(data.get("openPrice"), errors="coerce").fillna(0)
+    data["high"] = pd.to_numeric(data.get("highPrice"), errors="coerce").fillna(0)
+    data["low"] = pd.to_numeric(data.get("lowPrice"), errors="coerce").fillna(0)
+    data["vol"] = pd.to_numeric(data.get("tradeVolume"), errors="coerce").fillna(0)
+    data["val"] = pd.to_numeric(data.get("tradeValue"), errors="coerce").fillna(0)
   
-  # print(f"[DEBUG] Building Heatmap: {type_filter}, Metric: {area_metric}, Count: {len(data)}") # Trace logic
+  data["change_val"] = pd.to_numeric(data.get("change"), errors="coerce").fillna(0)
+  data = data[data["size_val"] > 0]
 
   tree_data = []
 
@@ -1705,15 +1903,27 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
     for _, row in data.iterrows():
       tree_data.append({"name": row["name"], "value": get_value_array(row)})
   else:
-    data["industry_name"] = data["industry"].apply(industry_label)
+    # === [修改] 根據來源選擇分類函數 ===
+    if is_sp500:
+      data["industry_name"] = data["industry"]  # 直接使用 GICS Sector
+    else:
+      data["industry_name"] = data["industry"].apply(industry_label)
+    
     grouped = data.groupby("industry_name")
     for industry, group in grouped:
       children = []
       for _, row in group.iterrows():
-        children.append({"name": row['name'], "value": get_value_array(row), "id": row["symbol"]})
+        children.append({
+          "name": row['name'], 
+          "value": get_value_array(row), 
+          "id": row["symbol"]
+        })
       tree_data.append({"name": industry, "children": children})
 
   return tree_data
+
+
+
 
 # ==========================================
 # PART 2: Yahoo Notify Logic
@@ -2424,7 +2634,7 @@ HTML_TEMPLATE = """
   
   /* [新增] Tooltip 圖片預設樣式 (電腦版) */
   .chart-tooltip-img {
-    width: 600px;
+    width: 800px;
     height: auto;
     display: block;
   }
@@ -2448,7 +2658,38 @@ HTML_TEMPLATE = """
 
   /* 3. Heatmap 區塊：固定高度 */
   body.mobile-mode #chart-container {
-    height: 500px;      
+    height: 600px;      
+  }
+
+  /* Tooltip 兩欄佈局 */
+  .tooltip-two-columns {
+    display: flex;
+    gap: 20px;
+  }
+
+  .tooltip-left-column {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .tooltip-right-column {
+    flex: 1;
+    min-width: 180px;
+    border-left: 1px solid #ddd;
+    padding-left: 15px;
+  }
+
+  /* [新增] Mobile Mode: 改為垂直堆疊 */
+  body.mobile-mode .tooltip-two-columns {
+    flex-direction: column;  /* 垂直排列 */
+    gap: 10px;
+  }
+
+  body.mobile-mode .tooltip-right-column {
+    border-left: none;           /* 移除左邊框 */
+    border-top: 1px solid #ddd;  /* 改為上邊框 */
+    padding-left: 0;
+    padding-top: 10px;
   }
 
   /* 4. Tooltip 圖片縮小 */
@@ -2467,7 +2708,7 @@ HTML_TEMPLATE = """
     max-width: 100% !important; /* 確保不被限制 */
     flex: 0 0 100% !important;  /* 強制 Flex 佔滿整行 */
     padding: 0 !important;      /* 移除欄位預設間距，達成邊對邊滿版 */
-  }
+  }  
   </style>
 </head>
 <body>
@@ -2481,6 +2722,7 @@ HTML_TEMPLATE = """
         <button class="btn btn-outline-dark" onclick="setMarket(this, 'twse', 'EQUITY')">上市個股</button>
         <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
         <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
       </div>
       <div style="font-size:14px;">
         <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
@@ -2562,15 +2804,12 @@ function tooltipFormatter(info) {
   var bodySize = '16px';
   var styleTitle = `font-family: san-serif; font-size:${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
   var styleBody = `color:#000; font-size:${bodySize}; line-height:1.6;`;
-  
-  // [修改] 移除 min-width 設定，因為垂直排列不需要撐開寬度
   var styleRow = 'display:flex; justify-content:space-between;'; 
 
   if (Array.isArray(val)) {
     var name = info.name;
-    var symbol = info.data.id || ''; // 取得代碼 (e.g. 2330.TW)
+    var symbol = info.data.id || '';
     
-    // 數值格式化
     var chgPct = fmtFloat(val[1]);
     var close = fmtFloat(val[2]);
     var open = fmtFloat(val[4]);
@@ -2580,50 +2819,85 @@ function tooltipFormatter(info) {
     var vol = fmtNum(val[8]);
     var valMoney = fmtNum(val[9]);
     
-    // 顏色判斷
     var chgColor = val[1] >= 0 ? '#ff3333' : '#00cc44'; 
     var chgSign = val[1] >= 0 ? '+' : '';
 
-    var textContent = `
-      <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
-      <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
-      <div style="${styleRow}"><span>開盤價：</span><span>${open}</span></div>
-      <div style="${styleRow}"><span>最高價：</span><span>${high}</span></div>
-      <div style="${styleRow}"><span>最低價：</span><span>${low}</span></div>
-    `;
-
-    if (currentType === 'EQUITY') {
-        textContent += `
-        <hr style="margin:5px 0; border:0; border-top:1px dashed #ccc;">
-        <div style="${styleRow}"><span>成交量：</span><span>${vol}</span></div>
-        <div style="${styleRow}"><span>成交金額：</span><span>${valMoney}</span></div>
+    var textContent = '';
+    
+    if (currentMarket === 'sp500') {
+      // S&P 500：只顯示收盤價和漲跌（單欄）
+      textContent = `
+        <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
+        <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
+      `;
+    } else {
+      // === [使用 CSS Class 控制佈局] ===
+      
+      // 左欄：價格資訊
+      var leftColumn = `
+        <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
+        <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
+        <div style="${styleRow}"><span>開盤價：</span><span>${open}</span></div>
+        <div style="${styleRow}"><span>最高價：</span><span>${high}</span></div>
+        <div style="${styleRow}"><span>最低價：</span><span>${low}</span></div>
+      `;
+      
+      // 右欄：成交資訊（僅個股顯示）
+      var rightColumn = '';
+      if (currentType === 'EQUITY') {
+        rightColumn = `
+          <div class="tooltip-right-column">
+            <div style="${styleRow}"><span>成交量：</span><span>${vol}</span></div>
+            <div style="${styleRow}"><span>成交金額：</span><span>${valMoney}</span></div>
+          </div>
         `;
+      }
+      
+      // 組合左右兩欄
+      if (rightColumn) {
+        textContent = `
+          <div class="tooltip-two-columns">
+            <div class="tooltip-left-column">
+              ${leftColumn}
+            </div>
+            ${rightColumn}
+          </div>
+        `;
+      } else {
+        // 如果是指數（沒有成交資訊），只顯示左欄
+        textContent = leftColumn;
+      }
     }
 
     var imageContent = "";
     if (currentType === 'EQUITY' && symbol) {
+        var imgUrl = '';
+      
+      // === [新增] 判斷市場來源 ===
+      if (currentMarket === 'sp500') {
+          imgUrl = `https://charts2.finviz.com/chart.ashx?t=${symbol}&ta=1&ty=c&p=d&s=l`;
+      } else {
         var stockCode = symbol.split('.')[0];
-        var imgUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
-        
-        // [修改] 改用 margin-top (垂直堆疊)，並讓圖片置中
-        imageContent = `
-          <div style="margin-top: 10px; background: #fff; padding: 2px; border: 1px solid #eee; text-align: center;">
-             <img src="${imgUrl}" class="chart-tooltip-img" alt="Chart" style="display:inline-block;">
-          </div>
-        `;
+        imgUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
+      }
+      
+      imageContent = `
+        <div style="margin-top: 10px; background: #fff; padding: 2px; border: 1px solid #eee; text-align: center;">
+           <img src="${imgUrl}" class="chart-tooltip-img" alt="Chart" style="display:inline-block;">
+        </div>
+      `;
     }
 
     var finalContent = "";
     if (imageContent) {
-        // [修改] 移除 display: flex，直接垂直排列
-        finalContent = `
-          <div>
-             <div style="${styleBody}">${textContent}</div>
-             ${imageContent}
-          </div>
-        `;
+      finalContent = `
+        <div>
+           <div style="${styleBody}">${textContent}</div>
+           ${imageContent}
+        </div>
+      `;
     } else {
-        finalContent = `<div style="${styleBody}">${textContent}</div>`;
+      finalContent = `<div style="${styleBody}">${textContent}</div>`;
     }
     
     return `<div style="${styleTitle}">${name} (${symbol})</div>${finalContent}`;
@@ -2666,6 +2940,9 @@ function isTwTradingHours() {
   const now = new Date();
   // 轉換為台北時間 (UTC+8)
   const taipeiTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+      
+  const day = etTime.getDay(); // 0=週日, 6=週六
+  if (day === 0 || day === 6) return false; // 週末不交易
   
   const hours = taipeiTime.getHours();
   const minutes = taipeiTime.getMinutes();
@@ -2680,13 +2957,49 @@ function isTwTradingHours() {
 
 
 
+
+// 檢查是否在美股交易時間內
+function isUsTradingHours() {
+  const now = new Date();
+  // 轉換為美東時間 (ET)
+  const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  
+  const day = etTime.getDay(); // 0=週日, 6=週六
+  if (day === 0 || day === 6) return false; // 週末不交易
+  
+  const hours = etTime.getHours();
+  const minutes = etTime.getMinutes();
+  const currentTime = hours * 60 + minutes;
+  
+  const startTime = 9 * 60 + 30;   // 09:30
+  const endTime = 16 * 60;          // 16:00
+  
+  return currentTime >= startTime && currentTime <= endTime;
+}
+
+
+
+
 // 條件式更新 Heatmap
 function conditionalUpdateHeatmap() {
-  if (isTwTradingHours()) {
-    console.log('交易時間內,更新 Heatmap');
-    updateHeatmap();
+  if (currentMarket === 'sp500') {
+    if (isUsTradingHours()) {
+      console.log('美股交易時間內，更新 Heatmap');
+      updateHeatmap();
+    } else {
+      console.log('美股非交易時間，跳過更新');
+    }
+  } else if (currentMarket === 'twse' || currentMarket === 'otc') {
+    if (isTwTradingHours()) {
+      console.log('台股交易時間內，更新 Heatmap');
+      updateHeatmap();
+    } else {
+      console.log('台股非交易時間，跳過更新');
+    }
   } else {
-    console.log('非交易時間,跳過更新');
+    // 其他市場直接更新
+    console.log(`${currentMarket} 市場，直接更新`);
+    updateHeatmap();
   }
 }
 
@@ -2699,13 +3012,19 @@ async function updateHeatmap() {
     console.log("[DEBUG] Initializing ECharts Instance...");
     chartInstance = echarts.init(document.getElementById('chart-container'));
 
-    // 雙擊事件 (維持不變)
+    // 雙擊事件
     chartInstance.on('dblclick', function(params) {
       if (params.data && params.data.id) {
         const symbol = params.data.id;
         if (symbol) {
+          if (currentMarket === 'sp500') {
+            // 美股：開啟 TradingView
+            window.open(`https://www.tradingview.com/chart/?symbol=${symbol}`, '_blank');
+          } else {
+            // 台股：開啟 CMoney 論壇
             const stockCode = symbol.split('.')[0];
             window.open(`https://www.cmoney.tw/forum/stock/${stockCode}`, '_blank');
+          }
         } 
       }
     });
@@ -2745,7 +3064,6 @@ async function updateHeatmap() {
         
         // [關鍵修正] 如果是手機模式，關閉 roam (拖曳/縮放)，讓使用者可以滑動網頁
         roam: !isMobile, 
-        
         width: '100%', height: '100%', top: 0, bottom: 0, left: 0, right: 0,
         levels: currentType === 'INDEX' ? [] : [
           { itemStyle: { borderColor: '#fff', borderWidth: 0, gapWidth: 0 } },
@@ -2757,7 +3075,10 @@ async function updateHeatmap() {
     };
     chartInstance.setOption(option);
     chartInstance.hideLoading();
-  } catch(e) { console.error(e); }
+  } catch(e) { 
+    console.error('[ERROR] Heatmap update failed:', e); 
+    chartInstance.hideLoading();
+  }
 }
 
 
@@ -3288,6 +3609,11 @@ def api_reset():
   # 立即重新執行初始化與 MA 計算
   monitor.init_portfolio()
   return jsonify({"status": "ok", "message": "Monitor System Reset Complete (JSON Reloaded, MA Recalculated)."})
+
+
+
+
+init_sp500_sectors()
 
 
 
