@@ -7,3 +7,4 @@ Gunicorn
 pyecharts
 beautifulsoup4
 curl_cffi
+lxml
