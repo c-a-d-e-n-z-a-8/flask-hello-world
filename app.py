@@ -1586,6 +1586,10 @@ OTC_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0043"
 SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 SP500_DATA_URL = "https://www.slickcharts.com/sp500"
 
+# Nasdaq 100 相關設定
+NDX_WIKI_URL = "https://en.wikipedia.org/wiki/Nasdaq-100"
+NDX_DATA_URL = "https://www.slickcharts.com/nasdaq100"
+
 INDEX_LIST =  ["^TWII", "^TWOII", "00631L.TW", "^GSPC", "^RUT", "^N225", "^KS11", "VOO", "QQQ", "QLD", "000300.SS"]
 
 HEADERS_FUGLE = {
@@ -1608,6 +1612,9 @@ INDUSTRY_MAP = {
 
 # GICS Sector 快取 (只讀取一次)
 GICS_SECTOR_CACHE = {}
+
+# Nasdaq 100 ICB Subsector 快取
+NDX_SUBSECTOR_CACHE = {}
 
 PTT_AUTHORS = ["sky22485816", "a000000000", "waitrop", "zmcx16", "Robertshih", "Test520", "zesonpso", "MrChen", "phcebus", "f204137", "a0808996", "IBIZA", "leo15824", "tosay", "LDPC", "nina801105", "mrp", "minazukimaya"]
 
@@ -1666,6 +1673,12 @@ def init_sp500_sectors():
             continue
         
         print(f"[DEBUG] GICS Sectors loaded: {len(GICS_SECTOR_CACHE)} symbols")
+        
+         # 驗證前 5 個
+        print("[DEBUG] First 5 entries:")
+        for i, (k, v) in enumerate(list(GICS_SECTOR_CACHE.items())[:5]):
+          print(f"  {k}: {v}")
+
       else:
         print("[WARN] No tables found in Wikipedia page")
     else:
@@ -1679,8 +1692,119 @@ def init_sp500_sectors():
 
 
 def industry_label_us(symbol: str) -> str:
-  """根據 Symbol 查詢對應的 GICS Sector"""
-  return GICS_SECTOR_CACHE.get(symbol, "Unknown")
+  """根據 Symbol 查詢對應的 GICS Sector (含容錯處理)"""
+  
+  # 1. 直接查找
+  if symbol in GICS_SECTOR_CACHE:
+    return GICS_SECTOR_CACHE[symbol]
+  
+  # 2. 嘗試將點號轉為破折號 (例如 BRK.B -> BRK-B)
+  symbol_alt1 = symbol.replace('.', '-')
+  if symbol_alt1 in GICS_SECTOR_CACHE:
+    return GICS_SECTOR_CACHE[symbol_alt1]
+  
+  # 3. 嘗試將破折號轉為點號 (例如 BRK-B -> BRK.B)
+  symbol_alt2 = symbol.replace('-', '.')
+  if symbol_alt2 in GICS_SECTOR_CACHE:
+    return GICS_SECTOR_CACHE[symbol_alt2]
+  
+  # 4. 嘗試移除所有符號 (例如 BRK.B -> BRKB)
+  symbol_alt3 = symbol.replace('.', '').replace('-', '')
+  if symbol_alt3 in GICS_SECTOR_CACHE:
+    return GICS_SECTOR_CACHE[symbol_alt3]
+  
+  # 5. 找不到時打印警告
+  print(f"[WARN] GICS Sector not found for symbol: {symbol} (tried: {symbol}, {symbol_alt1}, {symbol_alt2}, {symbol_alt3})")
+  return "Unknown"
+  
+
+
+
+def init_ndx_subsectors():
+  """初始化 Nasdaq 100 的 ICB Subsector 對應表 (只執行一次)"""
+  global NDX_SUBSECTOR_CACHE
+  
+  if NDX_SUBSECTOR_CACHE:
+    print("[DEBUG] Nasdaq 100 Subsector Cache already loaded.")
+    return
+  
+  try:
+    print("[DEBUG] Fetching Nasdaq 100 ICB Subsectors from Wikipedia...")
+    
+    r = requests.get(NDX_WIKI_URL, impersonate="chrome120", timeout=15)
+    
+    print(f"[DEBUG] Wikipedia NDX Response: {r.status_code}")
+    
+    if r.status_code == 200:
+      soup = BS(r.text, 'html.parser')
+      
+      # 找表格
+      table = soup.find('table', {'id': 'constituents'})
+      if not table:
+        table = soup.find('table', class_='wikitable sortable')
+      
+      if table:
+        tbody = table.find('tbody')
+        if tbody:
+          rows = tbody.find_all('tr')
+          
+          for idx, row in enumerate(rows):
+            cols = row.find_all('td')
+            
+            if len(cols) >= 4:
+              try:
+                ticker = cols[0].text.strip()
+                subsector = cols[3].text.strip()
+                subsector = ' '.join(subsector.split())  # 清理空白
+                
+                if ticker:
+                  NDX_SUBSECTOR_CACHE[ticker] = subsector
+                  
+              except Exception as e:
+                continue
+        
+        print(f"[DEBUG] Nasdaq 100 Subsectors loaded: {len(NDX_SUBSECTOR_CACHE)} symbols")
+        
+        # 驗證前 5 個
+        print("[DEBUG] First 5 entries:")
+        for i, (k, v) in enumerate(list(NDX_SUBSECTOR_CACHE.items())[:5]):
+          print(f"  {k}: {v}")
+          
+      else:
+        print("[WARN] Table not found")
+      
+  except Exception as e:
+    print(f"[ERROR] Failed to load Nasdaq 100 Subsectors: {e}")
+    traceback.print_exc()
+
+
+
+
+def industry_label_ndx(symbol: str) -> str:
+  """根據 Symbol 查詢對應的 ICB Subsector (含容錯處理)"""
+  
+  # 1. 直接查找
+  if symbol in NDX_SUBSECTOR_CACHE:
+    return NDX_SUBSECTOR_CACHE[symbol]
+  
+  # 2. 嘗試將點號轉為破折號 (例如 BRK.B -> BRK-B)
+  symbol_alt1 = symbol.replace('.', '-')
+  if symbol_alt1 in NDX_SUBSECTOR_CACHE:
+    return NDX_SUBSECTOR_CACHE[symbol_alt1]
+  
+  # 3. 嘗試將破折號轉為點號 (例如 BRK-B -> BRK.B)
+  symbol_alt2 = symbol.replace('-', '.')
+  if symbol_alt2 in NDX_SUBSECTOR_CACHE:
+    return NDX_SUBSECTOR_CACHE[symbol_alt2]
+  
+  # 4. 嘗試移除所有符號 (例如 BRK.B -> BRKB)
+  symbol_alt3 = symbol.replace('.', '').replace('-', '')
+  if symbol_alt3 in NDX_SUBSECTOR_CACHE:
+    return NDX_SUBSECTOR_CACHE[symbol_alt3]
+  
+  # 5. 找不到時打印警告
+  print(f"[WARN] ICB Subsector not found for symbol: {symbol} (tried: {symbol}, {symbol_alt1}, {symbol_alt2}, {symbol_alt3})")
+  return "Unknown"
 
 
 
@@ -1814,6 +1938,93 @@ def fetch_heatmap_data():
         print(f"[ERROR] SlickCharts fetch error: {e}")
         traceback.print_exc()
 
+      # === Nasdaq 100 資料 ===
+      print("[DEBUG] Fetching Nasdaq 100 data from SlickCharts...")
+      try:
+        r_ndx = requests.get(NDX_DATA_URL, impersonate="chrome120", timeout=15)
+        
+        print(f"[DEBUG] SlickCharts Nasdaq 100 Response: {r_ndx.status_code}")
+        
+        if r_ndx.status_code == 200:
+          soup = BS(r_ndx.text, 'html.parser')
+          target_div = soup.find('div', class_='col-lg-7')
+          
+          if target_div:
+            table = target_div.find('table')
+            
+            if table:
+              rows = []
+              tbody = table.find('tbody')
+              
+              if tbody:
+                for idx, tr in enumerate(tbody.find_all('tr')):
+                  cols = tr.find_all('td')
+                  
+                  if len(cols) >= 7:
+                    try:
+                      # SlickCharts Nasdaq 100 表格結構與 S&P 500 相同
+                      company = cols[1].text.strip()
+                      symbol = cols[2].text.strip()
+                      weight_raw = cols[3].text.strip()
+                      price_raw = cols[4].text.strip()
+                      change_raw = cols[5].text.strip()
+                      pct_change_raw = cols[6].text.strip()
+                      
+                      weight_str = weight_raw.replace('%', '').strip()
+                      weight = float(weight_str)
+                      
+                      price_str = price_raw.replace('$', '').replace(',', '').strip()
+                      price = float(price_str)
+                      
+                      change_str = change_raw.replace('$', '').replace(',', '').strip()
+                      change = float(change_str)
+                      
+                      pct_change_str = pct_change_raw.replace('(', '').replace(')', '').replace('%', '').strip()
+                      pct_change = float(pct_change_str)
+                      
+                      if change < 0:
+                        pct_change = -abs(pct_change)
+                      else:
+                        pct_change = abs(pct_change)
+                      
+                      # 使用 Nasdaq 100 專用的分類函數
+                      subsector = industry_label_ndx(symbol)
+                      
+                      rows.append({
+                        "symbol": symbol,
+                        "name": company,
+                        "closePrice": price,
+                        "change": change,
+                        "changePercent": pct_change,
+                        "weight": weight,
+                        "industry": subsector,
+                        "type": "EQUITY"
+                      })
+                      
+                      if idx < 3:
+                        print(f"[DEBUG] NDX {symbol}: Change={change}, %Chg={pct_change}, Weight={weight}, Subsector={subsector}")
+                      
+                    except (ValueError, IndexError, AttributeError) as e:
+                      print(f"[WARN] Nasdaq 100 Parsing row {idx} error: {e}")
+                      continue
+              
+              if rows:
+                DATA_CACHE["ndx"] = pd.DataFrame(rows)
+                print(f"[DEBUG] Nasdaq 100 Data loaded: {len(rows)} rows")
+              else:
+                print("[WARN] No valid rows parsed from Nasdaq 100 table")
+            else:
+              print("[WARN] Nasdaq 100 table not found")
+          else:
+            print("[WARN] Nasdaq 100 <div class='col-lg-7'> not found")
+        else:
+          print(f"[WARN] SlickCharts Nasdaq 100 fetch failed: {r_ndx.status_code}")
+          
+      except Exception as e:
+        print(f"[ERROR] SlickCharts Nasdaq 100 fetch error: {e}")
+        traceback.print_exc()
+
+
       DATA_CACHE["last_update"] = now
       print(f"[{time.ctime()}] [DEBUG] Heatmap Cache Updated.")
       
@@ -1829,6 +2040,8 @@ def get_clean_dataframe(market):
   
   if market == "sp500":
     df = DATA_CACHE.get("sp500")
+  elif market == "ndx":
+    df = DATA_CACHE.get("ndx")
   elif market == "twse":
     df = DATA_CACHE.get("twse")
   else:
@@ -1853,10 +2066,10 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
     print(f"[DEBUG] No data found for type_filter: {type_filter}")
     return []
 
-  # === [修改] 判斷是否為 S&P 500 ===
-  is_sp500 = "weight" in data.columns
+  # === 判斷是否為美股市場 (S&P 500 或 Nasdaq 100) ===
+  is_us_market = "weight" in data.columns
   
-  if is_sp500:
+  if is_us_market:
     # S&P 500 使用 Weight 作為面積依據
     size_col = "weight"
   else:
@@ -1875,7 +2088,7 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
   data["price"] = pd.to_numeric(data.get("closePrice"), errors="coerce").fillna(0)
   
   # === [修改] S&P 500 沒有 Open/High/Low，給預設值 ===
-  if is_sp500:
+  if is_us_market:
     data["open"] = data["price"]
     data["high"] = data["price"]
     data["low"] = data["price"]
@@ -1904,8 +2117,8 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
       tree_data.append({"name": row["name"], "value": get_value_array(row)})
   else:
     # === [修改] 根據來源選擇分類函數 ===
-    if is_sp500:
-      data["industry_name"] = data["industry"]  # 直接使用 GICS Sector
+    if is_us_market:
+      data["industry_name"] = data["industry"]
     else:
       data["industry_name"] = data["industry"].apply(industry_label)
     
@@ -2723,6 +2936,7 @@ HTML_TEMPLATE = """
         <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
         <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
         <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">Nasdaq 100</button>
       </div>
       <div style="font-size:14px;">
         <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
@@ -2824,7 +3038,7 @@ function tooltipFormatter(info) {
 
     var textContent = '';
     
-    if (currentMarket === 'sp500') {
+    if (currentMarket === 'sp500' || currentMarket === 'ndx') {
       // S&P 500：只顯示收盤價和漲跌（單欄）
       textContent = `
         <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
@@ -2874,8 +3088,9 @@ function tooltipFormatter(info) {
         var imgUrl = '';
       
       // === [新增] 判斷市場來源 ===
-      if (currentMarket === 'sp500') {
-          imgUrl = `https://charts2.finviz.com/chart.ashx?t=${symbol}&ta=1&ty=c&p=d&s=l`;
+      if (currentMarket === 'sp500' || currentMarket === 'ndx') {
+        var finvizSymbol = symbol.replace(/\./g, '-'); 
+        imgUrl = `https://charts2.finviz.com/chart.ashx?t=${finvizSymbol}&ta=1&ty=c&p=d&s=l`;
       } else {
         var stockCode = symbol.split('.')[0];
         imgUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
@@ -2982,7 +3197,7 @@ function isUsTradingHours() {
 
 // 條件式更新 Heatmap
 function conditionalUpdateHeatmap() {
-  if (currentMarket === 'sp500') {
+  if (currentMarket === 'sp500' || currentMarket === 'ndx') {
     if (isUsTradingHours()) {
       console.log('美股交易時間內，更新 Heatmap');
       updateHeatmap();
@@ -3017,7 +3232,7 @@ async function updateHeatmap() {
       if (params.data && params.data.id) {
         const symbol = params.data.id;
         if (symbol) {
-          if (currentMarket === 'sp500') {
+          if (currentMarket === 'sp500' || currentMarket === 'ndx') {
             // 美股：開啟 TradingView
             window.open(`https://www.tradingview.com/chart/?symbol=${symbol}`, '_blank');
           } else {
@@ -3446,7 +3661,8 @@ function handleStockHover(event) {
       imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
     } else {
       // 預設美股/其他
-      imageUrl = `https://charts2.finviz.com/chart.ashx?t=${symbol}&ta=1&ty=c&p=d&s=l`;
+      var finvizSymbol = symbol.replace(/\./g, '-'); 
+      imageUrl = `https://charts2.finviz.com/chart.ashx?t=${finvizSymbol}&ta=1&ty=c&p=d&s=l`;
     }
   }
   
@@ -3613,7 +3829,9 @@ def api_reset():
 
 
 
+# Initial S&P500 and Nas-100 sectors
 init_sp500_sectors()
+init_ndx_subsectors() 
 
 
 
