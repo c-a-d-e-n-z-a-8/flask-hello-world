@@ -389,12 +389,13 @@ def ollama_generate(prompt, model='llama3'):
 
 
 ################################################################################################################################################################
-def gemini_generate_content(prompt, model_name, api_key):
+def gemini_generate_content(prompt, model_name, api_key, use_search=True):
   url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
   headers = {
     "Content-Type": "application/json",
     "x-goog-api-key": api_key
   }
+  
   data = {
     "contents": [
        {
@@ -402,13 +403,15 @@ def gemini_generate_content(prompt, model_name, api_key):
            {"text": prompt}
          ]
        }
-    ],
-    "tools": [
+    ]
+  }
+
+  if use_search:
+    data["tools"] = [
        {
          "google_search": {}
        }
     ]
-  }
   
   response = requests.post(url, headers=headers, json=data, timeout=600)
   if response.status_code == 200:
@@ -434,7 +437,6 @@ def gemini_generate_content(prompt, model_name, api_key):
   
   else:
     raise Exception(f"❌ Gemini API error: {response.status_code} {response.text}")
-
 
 
 
@@ -578,7 +580,11 @@ csv table
           #model = genai.GenerativeModel(model_name)
           #response = model.generate_content(prompt)
           #analysis = response.text
-          analysis = gemini_generate_content(prompt, model_name, api_key)
+
+          # Auto-detect if search should be used
+          #use_search = "thinking" not in model_name.lower() and "reasoning" not in model_name.lower()
+          use_search = True
+          analysis = gemini_generate_content(prompt, model_name, api_key, use_search=use_search)
       except Exception as e:
         error = f"分析過程發生錯誤: {e}"
 
@@ -686,7 +692,9 @@ csv table
 """
                 print(prompt)
                 print('----------------------------------------')
-                analysis = gemini_generate_content(prompt, model_name, gemini_key)
+                #use_search = "thinking" not in model_name.lower() and "reasoning" not in model_name.lower()
+                use_search = True
+                analysis = gemini_generate_content(prompt, model_name, api_key, use_search=use_search)
             except Exception as e:
                 error = f"分析過程發生錯誤: {e}"
 
