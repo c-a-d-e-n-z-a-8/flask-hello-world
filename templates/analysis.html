@@ -74,9 +74,10 @@
                 <div class="mb-3">
                     <label for="model" class="form-label">Select Gemini Model</label>
                     <select class="form-select" id="model" name="model">
-                        <option value="gemini-2.5-pro" {% if model == 'gemini-2.5-pro' %}selected{% endif %}>Gemini 2.5 Pro</option>
-                        <option value="gemini-2.5-flash" {% if model == 'gemini-2.5-flash' %}selected{% endif %}>Gemini 2.5 Flash</option>
-                        <option value="gemini-2.0-flash" {% if model == 'gemini-2.0-flash' %}selected{% endif %}>Gemini 2.0 Flash</option>
+                        <option value="gemini-2.5-pro" {% if model == 'gemini-2.5-pro' %}selected{% endif %}>gemini-2.5-pro</option>
+                        <option value="gemini-2.5-flash" {% if model == 'gemini-2.5-flash' %}selected{% endif %}>gemini-2.5-flash</option>
+                        <option value="gemini-2.0-flash" {% if model == 'gemini-2.0-flash' %}selected{% endif %}>gemini-2.0-flash</option>
+                        <option value="gemini-3-flash-preview" {% if model == 'gemini-3-flash-preview' %}selected{% endif %}>gemini-3-flash-preview</option>
                         <option value="gemini-3-pro-preview" {% if model == 'gemini-3-pro-preview' %}selected{% endif %}>gemini-3-pro-preview</option>
                     </select>
                 </div>
