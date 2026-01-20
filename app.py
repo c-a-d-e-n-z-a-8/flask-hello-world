@@ -1219,24 +1219,43 @@ def get_option_chain(ticker, expiration):
 
 ################################################################################################################################################################
 def calculate_max_pain(calls, puts):
+  # Data cleaning and type enforcement
+  calls = calls.copy()
+  puts = puts.copy()
+
+  # Ensure openInterest column exists and handle missing values
+  if 'openInterest' not in calls.columns:
+      calls['openInterest'] = 0
+  if 'openInterest' not in puts.columns:
+      puts['openInterest'] = 0
+
+  calls['openInterest'] = pd.to_numeric(calls['openInterest'], errors='coerce').fillna(0)
+  puts['openInterest'] = pd.to_numeric(puts['openInterest'], errors='coerce').fillna(0)
+
   all_strikes = sorted(set(calls['strike']).union(set(puts['strike'])))
+  
+  if not all_strikes:
+    return 0
+
   pain = {}
 
-  for strike in all_strikes:
-    total_loss = 0
-    for _, row in calls.iterrows():
-      if row['strike'] < strike:
-        loss = row['openInterest'] * (strike - row['strike'])
-        total_loss += loss
-    for _, row in puts.iterrows():
-      if row['strike'] > strike:
-        loss = row['openInterest'] * (row['strike'] - strike)
-        total_loss += loss
-    pain[strike] = total_loss
+  for price in all_strikes:
+    # Call Loss: sum(OI * (Price - Strike)) where Strike < Price (ITM Calls)
+    itm_calls = calls[calls['strike'] < price]
+    call_loss = (itm_calls['openInterest'] * (price - itm_calls['strike'])).sum()
+    
+    # Put Loss: sum(OI * (Strike - Price)) where Strike > Price (ITM Puts)
+    itm_puts = puts[puts['strike'] > price]
+    put_loss = (itm_puts['openInterest'] * (itm_puts['strike'] - price)).sum()
+    
+    pain[price] = call_loss + put_loss
 
   del all_strikes
   gc.collect()
 
+  if not pain:
+      return 0
+      
   return min(pain, key=pain.get)
 
 
