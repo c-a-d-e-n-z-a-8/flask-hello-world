@@ -3037,20 +3037,155 @@ function setMarket(btn, market, type) {
 
 
 
+// === 1. 畫圖函式 (修正灰色昨收線樣式) ===
+async function renderSparklineSVG(containerId, symbol) {
+  const container = document.getElementById(containerId);
+  if (!container || container.getAttribute('data-loaded')) return;
+
+  const targetUrl = `https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;type=tick;symbols=["${symbol}"]`;
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+
+  try {
+    const response = await fetch(proxyUrl);
+    const json = await response.json();
+    const chartData = Array.isArray(json) ? json[0].chart : json.data?.[0]?.chart;
+    
+    if (!chartData) throw new Error("無圖表資料");
+
+    const timestamps = chartData.timestamp;
+    const closes = chartData.indicators.quote[0].close;
+    const meta = chartData.meta;
+    
+    const prevClose = meta.chartPreviousClose || meta.previousClose;
+    const limitUp = meta.limitUpPrice;
+    const limitDown = meta.limitDownPrice;
+
+    // === 【關鍵修改 1】設定 X 軸範圍 (交易時段) ===
+    // 嘗試從 tradingPeriods 取得當天的開盤(start)與收盤(end)時間
+    let minT, maxT;
+    const period = meta.tradingPeriods?.[0]?.[0]; // 安全存取
+
+    if (period && period.start && period.end) {
+      // 如果有定義交易時段，X 軸就固定死這個範圍
+      minT = period.start;
+      maxT = period.end;
+    } else {
+      // 如果沒有 (例如某些指數)，就退回使用資料的第一筆跟最後一筆
+      if (timestamps && timestamps.length > 0) {
+        minT = timestamps[0];
+        maxT = timestamps[timestamps.length - 1];
+      } else {
+        // 完全沒資料也沒時段，給個預設值避免報錯
+        minT = 0; maxT = 1; 
+      }
+    }
+
+    // 1. 整理數據點
+    const points = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const t = timestamps[i];
+      const p = closes[i];
+      
+      // 【優化】只收錄在交易時段內的點，避免盤前盤後數據導致線畫到格子外面
+      if (p !== null && p !== undefined && t >= minT && t <= maxT) {
+        points.push({ t: t, p: p });
+      }
+    }
+
+    if (points.length === 0) {
+      container.innerHTML = '<span style="color:#ccc;font-size:12px;">等待開盤</span>';
+      return;
+    }
+
+    // 2. 計算 Y 軸範圍 (價格)
+    let minP, maxP;
+    const hasLimitPrice = (limitUp && limitUp !== '-' && limitDown && limitDown !== '-');
+
+    if (hasLimitPrice) {
+      maxP = parseFloat(limitUp);
+      minP = parseFloat(limitDown);
+    } else {
+      minP = points[0].p;
+      maxP = points[0].p;
+      points.forEach(pt => {
+        if (pt.p < minP) minP = pt.p;
+        if (pt.p > maxP) maxP = pt.p;
+      });
+      if (prevClose) {
+        if (prevClose < minP) minP = prevClose;
+        if (prevClose > maxP) maxP = prevClose;
+      }
+      if (maxP === minP) {
+        maxP *= 1.01;
+        minP *= 0.99;
+      }
+    }
+
+    // 3. 設定畫布尺寸與轉換公式
+    const width = 300; 
+    const height = 110; 
+    const padding = 5; 
+
+    // 【關鍵修改 2】getX 的公式不變，但是傳入的 minT / maxT 已經變成固定的「開盤~收盤」時間了
+    const getX = (t) => ((t - minT) / (maxT - minT)) * width;
+    const getY = (p) => height - padding - ((p - minP) / (maxP - minP)) * (height - 2 * padding);
+
+    // 產生走勢圖路徑
+    const svgPoints = points.map(pt => {
+      return `${getX(pt.t).toFixed(1)},${getY(pt.p).toFixed(1)}`;
+    }).join(" ");
+
+    // 計算昨收線 (實線)
+    let prevCloseLine = "";
+    if (prevClose && prevClose >= minP && prevClose <= maxP) {
+      const yPrev = getY(prevClose).toFixed(1);
+      prevCloseLine = `<line x1="0" y1="${yPrev}" x2="${width}" y2="${yPrev}" stroke="#999" stroke-width="0.8" opacity="0.6" />`;
+    }
+
+    // 決定顏色
+    const lastPrice = points[points.length - 1].p;
+    const refPrice = prevClose || points[0].p; 
+    const color = lastPrice >= refPrice ? "#ff3333" : "#00cc44";
+
+    // 4. 輸出 SVG
+    container.innerHTML = `
+      <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="width:100%; height:100%; background:transparent;">
+        ${prevCloseLine}
+        <polyline points="${svgPoints}" 
+              fill="none" 
+              stroke="${color}" 
+              stroke-width="2" 
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke" /> 
+      </svg>
+    `;
+
+    container.setAttribute('data-loaded', 'true');
+    container.style.background = 'transparent';
+    container.style.border = 'none';
+
+  } catch (err) {
+    console.error("Chart Error:", err);
+    container.innerHTML = '<span style="color:#ccc;font-size:12px;">N/A</span>';
+  }
+}
+
+
+
+
+// === 2. Tooltip 格式化 (修改佈局以填滿) ===
 function tooltipFormatter(info) {
-  var val = info.data.value; 
-  if (!val) { val = info.value; } 
-  
-  var titleSize = '18px';
-  var bodySize = '16px';
-  var styleTitle = `font-family: san-serif; font-size:${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
-  var styleBody = `color:#000; font-size:${bodySize}; line-height:1.6;`;
-  var styleRow = 'display:flex; justify-content:space-between;'; 
+  var val = info.data.value;
+  if (!val) { val = info.value; }
+
+  var styleTitle = 'font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:8px; padding-bottom:5px; color:#000; font-size:16px;';
+  // 稍微增加左側的最小寬度
+  var styleRow = 'display:flex; justify-content:space-between; font-size:13px; color:#000; line-height:1.5; min-width:140px;';
 
   if (Array.isArray(val)) {
     var name = info.name;
     var symbol = info.data.id || '';
-    
+
     var chgPct = fmtFloat(val[1]);
     var close = fmtFloat(val[2]);
     var open = fmtFloat(val[4]);
@@ -3059,94 +3194,74 @@ function tooltipFormatter(info) {
     var change = fmtFloat(val[7]);
     var vol = fmtNum(val[8]);
     var valMoney = fmtNum(val[9]);
-    
-    var chgColor = val[1] >= 0 ? '#ff3333' : '#00cc44'; 
-    var chgSign = val[1] >= 0 ? '+' : '';
 
-    var textContent = '';
+    var chgColor = val[1] >= 0 ? '#ff3333' : '#00cc44';
     
-    if (currentMarket === 'sp500' || currentMarket === 'ndx') {
-      // S&P 500：只顯示收盤價和漲跌（單欄）
-      textContent = `
-        <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
-        <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
+    var safeSymbol = symbol.replace(/[^a-zA-Z0-9]/g, '');
+    var chartId = 'spark_' + safeSymbol + '_' + Date.now();
+
+    // 1. 左側資訊區 (固定最小寬度)
+    var leftContent = `
+      <div style="margin-right: 15px;">
+        <div style="${styleRow}"><span>收盤：</span><b>${close}</b></div>
+        <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};">${change} (${chgPct}%)</span></div>
+        <div style="${styleRow}"><span>開盤：</span><span>${open}</span></div>
+        <div style="${styleRow}"><span>最高：</span><span>${high}</span></div>
+        <div style="${styleRow}"><span>最低：</span><span>${low}</span></div>
+    `;
+    if (currentType === 'EQUITY') {
+      leftContent += `
+        <div style="border-top:1px dashed #ddd; margin:4px 0;"></div>
+        <div style="${styleRow}"><span>量：</span><span>${vol}</span></div>
+        <div style="${styleRow}"><span>額：</span><span>${valMoney}</span></div>
       `;
-    } else {
-      // === [使用 CSS Class 控制佈局] ===
-      
-      // 左欄：價格資訊
-      var leftColumn = `
-        <div style="${styleRow}"><span>收盤價：</span><b>${close}</b></div>
-        <div style="${styleRow}"><span>漲跌：</span><span style="color:${chgColor};font-weight:bold">${change} (${chgSign}${chgPct}%)</span></div>
-        <div style="${styleRow}"><span>開盤價：</span><span>${open}</span></div>
-        <div style="${styleRow}"><span>最高價：</span><span>${high}</span></div>
-        <div style="${styleRow}"><span>最低價：</span><span>${low}</span></div>
+    }
+    leftContent += `</div>`;
+
+    // 2. 右側圖表區 (【關鍵修改】Flex 填滿)
+    var rightContent = '';
+    if (symbol) {
+      rightContent = `
+        <div style="flex: 1; display: flex; flex-direction: column;">
+           <div style="font-size:12px; color:#666; margin-bottom:4px; font-weight:bold;">即時走勢</div>
+           <div id="${chartId}" style="width:100%; height:110px; display:flex; align-items:center; justify-content:center; background:#f9f9f9; border:1px solid #eee; border-radius:4px;">
+            <span style="color:#999;font-size:12px;">Loading...</span>
+           </div>
+        </div>
       `;
-      
-      // 右欄：成交資訊（僅個股顯示）
-      var rightColumn = '';
-      if (currentType === 'EQUITY') {
-        rightColumn = `
-          <div class="tooltip-right-column">
-            <div style="${styleRow}"><span>成交量：</span><span>${vol}</span></div>
-            <div style="${styleRow}"><span>成交金額：</span><span>${valMoney}</span></div>
-          </div>
-        `;
-      }
-      
-      // 組合左右兩欄
-      if (rightColumn) {
-        textContent = `
-          <div class="tooltip-two-columns">
-            <div class="tooltip-left-column">
-              ${leftColumn}
-            </div>
-            ${rightColumn}
-          </div>
-        `;
-      } else {
-        // 如果是指數（沒有成交資訊），只顯示左欄
-        textContent = leftColumn;
-      }
+      setTimeout(() => renderSparklineSVG(chartId, symbol), 1000);
     }
 
-    var imageContent = "";
+    // 3. 下方大圖區
+    var bottomImage = '';
     if (currentType === 'EQUITY' && symbol) {
-        var imgUrl = '';
-      
-      // === [新增] 判斷市場來源 ===
+      var imgUrl = '';
       if (currentMarket === 'sp500' || currentMarket === 'ndx') {
-        var finvizSymbol = symbol.replace(/\./g, '-'); 
-        imgUrl = `https://charts2.finviz.com/chart.ashx?t=${finvizSymbol}&ta=1&ty=c&p=d&s=l`;
+        imgUrl = `https://charts2.finviz.com/chart.ashx?t=${symbol.replace(/\./g, '-')}&ta=1&ty=c&p=d&s=l`;
       } else {
-        var stockCode = symbol.split('.')[0];
-        imgUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
+        imgUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${symbol.split('.')[0]}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
       }
-      
-      imageContent = `
-        <div style="margin-top: 10px; background: #fff; padding: 2px; border: 1px solid #eee; text-align: center;">
-           <img src="${imgUrl}" class="chart-tooltip-img" alt="Chart" style="display:inline-block;">
+      bottomImage = `
+        <div style="margin-top:10px; padding-top:10px; border-top:1px solid #eee; text-align:center;">
+          <img src="${imgUrl}" style="max-width:100%; height:auto; display:block; margin:auto;">
         </div>
       `;
     }
 
-    var finalContent = "";
-    if (imageContent) {
-      finalContent = `
-        <div>
-           <div style="${styleBody}">${textContent}</div>
-           ${imageContent}
+    // 主容器增加一點寬度，上半部使用 Flex 佈局
+    return `
+      <div style="padding:8px; min-width:320px; font-family:'Roboto', sans-serif;">
+        <div style="${styleTitle}">${name} (${symbol})</div>
+        <div style="display:flex; align-items: flex-start;">
+          ${leftContent}
+          ${rightContent}
         </div>
-      `;
-    } else {
-      finalContent = `<div style="${styleBody}">${textContent}</div>`;
-    }
-    
-    return `<div style="${styleTitle}">${name} (${symbol})</div>${finalContent}`;
-  } else {
-    var displayVal = typeof val === 'number' ? val.toFixed(2) : 'N/A';
-    return `<div style="${styleTitle}">${info.name}</div><div style="${styleBody}">板塊總權重: ${displayVal}</div>`;
-  }
+        ${bottomImage}
+      </div>
+    `;
+  } 
+  
+  return `${info.name}: ${val}`;
 }
 
 
