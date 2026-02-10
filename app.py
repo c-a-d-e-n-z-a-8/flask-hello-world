@@ -3792,46 +3792,103 @@ const CHART_URL_MAP = {
 
 function handleStockHover(event) {
   const symbol = event.currentTarget.getAttribute('data-symbol');
-   
-  // 1. 優先查表 (Exact Match)
-  let imageUrl = CHART_URL_MAP[symbol];
+  if (!symbol) return;
 
-  // 2. 如果查不到，再處理動態邏輯
+  // === 1. 取得圖片 URL ===
+  let imageUrl = (typeof CHART_URL_MAP !== 'undefined') ? CHART_URL_MAP[symbol] : null;
+
   if (!imageUrl) {
     if (symbol.includes('.TW')) {
       const stockCode = symbol.split('.')[0];
       imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
     } else {
-      // 預設美股/其他
       var finvizSymbol = symbol.replace(/\./g, '-'); 
       imageUrl = `https://charts2.finviz.com/chart.ashx?t=${finvizSymbol}&ta=1&ty=c&p=d&s=l`;
     }
   }
   
+  // === 2. 建立 Popup ===
   let popup = document.getElementById('stock-chart-popup');
   if (!popup) {
     popup = document.createElement('div');
     popup.id = 'stock-chart-popup';
     popup.className = 'stock-popup';
+    
+    // 基礎樣式
+    popup.style.background = '#fff';
+    popup.style.padding = '10px';
+    popup.style.border = '1px solid #ccc';
+    popup.style.boxShadow = '0 4px 15px rgba(0,0,0,0.3)'; // 加深一點陰影
+    popup.style.borderRadius = '8px';
+    popup.style.zIndex = '9999';
     document.body.appendChild(popup);
   }
   
-  popup.innerHTML = '<div class="loading">載入圖表中...</div>';
+  // === 3. 設定位置與尺寸 (關鍵修改) ===
   popup.style.display = 'block';
-  
-  // 固定位置：螢幕中央
-  popup.style.left = '30%';
+  popup.style.position = 'fixed';
+  popup.style.left = '50%'; // 改為 50% 比較正中
   popup.style.top = '50%';
   popup.style.transform = 'translate(-50%, -50%)';
   
+  // 【關鍵修改】：不鎖死 width，改用 min-width
+  // 這樣一開始有最小寬度，等圖片載入後，寬度會自動被圖片撐開
+  popup.style.width = 'auto'; 
+  popup.style.minWidth = '320px'; 
+  popup.style.maxWidth = '95vw'; // 防止圖片太大超出螢幕
+  
+  // === 4. 建構 HTML ===
+  const sparklineId = 'hover_spark_' + symbol.replace(/[^a-zA-Z0-9]/g, '') + '_' + Date.now();
+
+  popup.innerHTML = `
+    <div style="display: flex; flex-direction: column; align-items: center;">
+      
+      <div style="width: 100%; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
+        <div style="font-weight: bold; margin-bottom: 5px; font-size: 14px; text-align: left;">${symbol} 即時走勢</div>
+        <div id="${sparklineId}" style="width: 100%; height: 80px; display:flex; align-items:center; justify-content:center; background:#f9f9f9;">
+          <span class="loading" style="font-size:12px; color:#999;">載入即時盤...</span>
+        </div>
+      </div>
+
+      <div id="popup-img-container" style="min-height: 200px; display:flex; align-items:center; justify-content:center;">
+        <div class="loading" style="font-size:12px; color:#666;">載入技術線圖...</div>
+      </div>
+
+    </div>
+  `;
+
+  // === 5. 繪製 SVG ===
+  setTimeout(() => {
+    if (typeof renderSparklineSVG === 'function') {
+        renderSparklineSVG(sparklineId, symbol);
+    }
+  }, 1000);
+
+  // === 6. 載入圖片 (撐開寬度) ===
   const img = new Image();
+  
+  // 圖片樣式：讓它保持原始比例，但不要超過螢幕寬度
+  img.style.display = 'block';
+  img.style.maxWidth = '90vw'; // 限制最大寬度，避免手機版爆版
+  img.style.height = 'auto';
+  
   img.onload = () => {
-    popup.innerHTML = '';
-    popup.appendChild(img);
+    const imgContainer = popup.querySelector('#popup-img-container');
+    if (imgContainer) {
+      imgContainer.innerHTML = ''; 
+      imgContainer.appendChild(img);
+      // 圖片載入後，popup 寬度會自動變寬
+      // 上方的 SVG 因為設了 width: 100% 也會跟著拉長
+    }
   };
+  
   img.onerror = () => {
-    popup.innerHTML = '<div class="loading" style="color: red;">圖表載入失敗</div>';
+    const imgContainer = popup.querySelector('#popup-img-container');
+    if (imgContainer) {
+      imgContainer.innerHTML = '<div style="color: red; padding: 20px;">圖表載入失敗</div>';
+    }
   };
+  
   img.src = imageUrl;
 }
 
