@@ -588,7 +588,10 @@ csv table
 
           # Auto-detect if search should be used
           #use_search = "thinking" not in model_name.lower() and "reasoning" not in model_name.lower()
-          use_search = True
+          if model_name == 'gemini-2.5-flash':
+            use_search = True
+          else:
+            use_search = False
           analysis = gemini_generate_content(prompt, model_name, api_key, use_search=use_search)
       except Exception as e:
         error = f"分析過程發生錯誤: {e}"
