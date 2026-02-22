@@ -243,6 +243,38 @@ def fetch_tw_financing_stats(ticker):
 
 
 ################################################################################################################################################################
+def fetch_symbol_name(ticker):
+  
+  return_value = ""
+  
+  headers = {
+    'authority': 'query1.finance.yahoo.com',
+    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    'accept-language': 'zh-TW,zh-CN;q=0.9,zh;q=0.8,en-US;q=0.7,en;q=0.6',
+    'cache-control': 'max-age=0',
+    'sec-ch-ua': '"Google Chrome";v="117", "Not;A=Brand";v="8", "Chromium";v="117"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'document',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-site': 'none',
+    'sec-fetch-user': '?1',
+    'upgrade-insecure-requests': '1',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
+  }
+  
+  url = 'https://tw.stock.yahoo.com/_td-stock/api/resource/StockServices.stockList;symbols=' + ticker
+  r = requests.get(url, headers=headers, timeout=5)
+
+  if r.status_code == 200:
+    yahoo_tw = r.json()
+    return_value = yahoo_tw[0]['symbolName']
+
+  return return_value
+
+
+
+################################################################################################################################################################
 def simplified_options(stock):
   result = []
   for date in stock.options:
@@ -338,6 +370,7 @@ def fetch_stock_data(ticker):
   gc.collect()
   
   return {
+    "symbol_name": fetch_symbol_name(ticker),
     "history": hist_dict,
     "financials": financials,
     "quarterly_financials": quarterly_financials,
@@ -495,6 +528,7 @@ def gemini_analysis():
         #print(prompt)
         #print('----------------------------------------')
         """
+        symbol_name = stock_data['symbol_name']
         history_table = dict_to_table(stock_data['history'])
         mf_tw_table = dict_to_table(stock_data['mainforce_tw'])
         short_table = dict_to_table(stock_data['short_stats'])
@@ -513,7 +547,7 @@ def gemini_analysis():
        
         print('----------------------------------------')
         prompt = f"""
-你是一個資深的華爾街分析師，擅長從基本面技術面籌碼面產生股票分析報告。請根據 {ticker} 的下列資料進行分析並產生一份繁體中文個股分析報告，首先用簡單的語言解釋這家公司的業務：它解決什麼問題，誰為此付費，為什麼客戶選擇它而不是替代品。
+你是一個資深的華爾街分析師，擅長從基本面技術面籌碼面產生股票分析報告。請根據 {symbol_name} ({ticker}) 的下列資料進行分析並產生一份繁體中文個股分析報告，首先用簡單的語言解釋這家公司的業務：它解決什麼問題，誰為此付費，為什麼客戶選擇它而不是替代品。
 分解這家公司的收入流：哪些部門在增長，哪些在放緩，公司對頂級產品或客戶的依賴程度如何？解釋這家公司所在的行業：市場是在增長、穩定還是萎縮？什麼長期趨勢有利或不利於該業務？列出主要競爭對手：比較他們的定價權、產品實力、規模和競爭壁壘，突出這家公司明顯勝出或落後的地方。
 然後從網路上搜尋近半年公司相關新聞並以表格方式總結其對股價與經營業務的影響，然後列出目前價格與關鍵支持價位，以及根據財報預測數據所推算的未來股價，內容包含基本面 (數字要有YoY加減速的分析，重點關注收入增長一致性、利潤率、債務水平、自由現金流強度和資本配置。並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏與對應的PE/PS/PB ratio，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析，例如是否有價量背離或技術指標與股價背離，或是型態上有破底翻、假突破、杯柄型態、上升旗型、下降旗型等典型股價走勢型態) 與期權市場的觀察與建議。 若mf_tw_table資料中有台灣股市主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中short_table有值，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。若資料中有台灣股市 (sf_tw_table) 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)，分析市場空單狀況，嘎空可能性以及未來主力操作方向。
 接下來，識別這家公司的最大風險。包括業務風險、財務風險、監管威脅和可能永久性傷害業務的因素，評估管理團隊的歷史表現。他們過去執行情況如何？他們的決策如何影響長期股東？
@@ -623,6 +657,7 @@ def gemini_analysis_user():
         else:
             try:
                 # 假設 fetch_stock_data 和 gemini_generate_content 已定義
+                symbol_name = stock_data['symbol_name']
                 stock_data = fetch_stock_data(ticker)
                 history_table = dict_to_table(stock_data['history'])
                 mf_tw_table = dict_to_table(stock_data['mainforce_tw'])
@@ -642,7 +677,7 @@ def gemini_analysis_user():
                
                 print('----------------------------------------')
                 prompt = f"""
-你是一個資深的華爾街分析師，擅長從基本面技術面籌碼面產生股票分析報告。請根據 {ticker} 的下列資料進行分析並產生一份繁體中文個股分析報告，首先用簡單的語言解釋這家公司的業務：它解決什麼問題，誰為此付費，為什麼客戶選擇它而不是替代品。
+你是一個資深的華爾街分析師，擅長從基本面技術面籌碼面產生股票分析報告。請根據 {symbol_name} ({ticker}) 的下列資料進行分析並產生一份繁體中文個股分析報告，首先用簡單的語言解釋這家公司的業務：它解決什麼問題，誰為此付費，為什麼客戶選擇它而不是替代品。
 分解這家公司的收入流：哪些部門在增長，哪些在放緩，公司對頂級產品或客戶的依賴程度如何？解釋這家公司所在的行業：市場是在增長、穩定還是萎縮？什麼長期趨勢有利或不利於該業務？列出主要競爭對手：比較他們的定價權、產品實力、規模和競爭壁壘，突出這家公司明顯勝出或落後的地方。
 然後從網路上搜尋近半年公司相關新聞並以表格方式總結其對股價與經營業務的影響，然後列出目前價格與關鍵支持價位，以及根據財報預測數據所推算的未來股價，內容包含基本面 (數字要有YoY加減速的分析，重點關注收入增長一致性、利潤率、債務水平、自由現金流強度和資本配置。並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏與對應的PE/PS/PB ratio，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析，例如是否有價量背離或技術指標與股價背離，或是型態上有破底翻、假突破、杯柄型態、上升旗型、下降旗型等典型股價走勢型態) 與期權市場的觀察與建議。 若mf_tw_table資料中有台灣股市主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中short_table有值，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。若資料中有台灣股市 (sf_tw_table) 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)，分析市場空單狀況，嘎空可能性以及未來主力操作方向。
 接下來，識別這家公司的最大風險。包括業務風險、財務風險、監管威脅和可能永久性傷害業務的因素，評估管理團隊的歷史表現。他們過去執行情況如何？他們的決策如何影響長期股東？
