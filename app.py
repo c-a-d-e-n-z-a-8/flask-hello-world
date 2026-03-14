@@ -1691,7 +1691,7 @@ GICS_SECTOR_CACHE = {}
 # Nasdaq 100 ICB Subsector 快取
 NDX_SUBSECTOR_CACHE = {}
 
-PTT_AUTHORS = ["sky22485816", "a000000000", "waitrop", "zmcx16", "Robertshih", "Test520", "zesonpso", "MrChen", "phcebus", "f204137", "a0808996", "IBIZA", "leo15824", "tosay", "LDPC", "nina801105", "mrp", "minazukimaya", "liliumeow"]
+PTT_AUTHORS = ["sky22485816", "a000000000", "waitrop", "zmcx16", "Robertshih", "Test520", "zesonpso", "MrChen", "phcebus", "f204137", "a0808996", "IBIZA", "leo15824", "tosay", "LDPC", "nina801105", "mrp", "minazukimaya", "liliumeow", "onekoni"]
 
 DATA_CACHE = {"twse": None, "otc": None, "last_update": 0}
 CACHE_DURATION = 300
@@ -1708,57 +1708,75 @@ def industry_label(code) -> str:
 
 
 def init_sp500_sectors():
-  """初始化 S&P 500 的 GICS Sector 對應表 (只執行一次)"""
+  """初始化 S&P 500 的 GICS Sector 對應表"""
   global GICS_SECTOR_CACHE
-  
-  if GICS_SECTOR_CACHE:  # 如果已經載入過就直接返回
+
+  if GICS_SECTOR_CACHE:
     print("[DEBUG] GICS Sector Cache already loaded.")
     return
-  
+
   try:
     print("[DEBUG] Fetching S&P 500 GICS Sectors from Wikipedia...")
     
-    # 使用 curl_cffi 的 impersonate 參數
-    r = requests.get(
-      SP500_WIKI_URL, 
-      impersonate="chrome120",
-      timeout=15
-    )
+    # 修正 1: 設定 User-Agent 以避免被 Wikipedia 擋擋 (使用標準 requests)
+    headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     
+    r = requests.get(SP500_WIKI_URL, headers=headers, timeout=15)
     print(f"[DEBUG] Wikipedia Response: {r.status_code}")
     
     if r.status_code == 200:
-      # 使用 pandas 讀取 HTML 表格
-      df_list = pd.read_html(r.text)
+      # 修正 2: 針對 HTML ID="constituents" 抓取表格，確保不會抓到其他的 Infobox
+      # 修正 3: 使用 io.StringIO 避免 Pandas 未來版本的警告
+      df_list = pd.read_html(
+        r.text, 
+        attrs={'id': 'constituents'} 
+      )
       
       if df_list:
-        df = df_list[0]  # 取第一個表格
+        df = df_list[0]  # 因為指定了 id，這裡取出的第一個表格一定是正確的
         
         print(f"[DEBUG] Wikipedia Table Columns: {df.columns.tolist()}")
         
         # 建立 Symbol -> GICS Sector 的對應
+        count = 0
         for _, row in df.iterrows():
           try:
             symbol = str(row.get('Symbol', '')).strip()
             sector = str(row.get('GICS Sector', 'Unknown')).strip()
             
+            # 額外處理: 維基百科的 GICS Sector 欄位有時會包含連結文字，Pandas 通常處理得很好，
+            # 但如果欄位名稱變更，這裡可以做防呆
+            if sector == 'Unknown':
+              # 嘗試找尋其他可能的欄位名稱 (有些版本叫 'GICS Sector', 有些包含 hidden text)
+              for col in df.columns:
+                if 'GICS Sector' in col:
+                  sector = str(row.get(col, 'Unknown')).strip()
+                  break
+
             if symbol and symbol != 'nan':
+              # 額外處理: Wikipedia 的 ticker 有時用 '.' (如 BRK.B)，有些 API 需要 '-' (如 BRK-B)
+              # 視你的下游需求決定是否要 replace('.', '-')
               GICS_SECTOR_CACHE[symbol] = sector
-          except Exception as e:
+              count += 1
+              
+          except Exception:
             continue
         
         print(f"[DEBUG] GICS Sectors loaded: {len(GICS_SECTOR_CACHE)} symbols")
         
-         # 驗證前 5 個
+        # 驗證前 5 個
         print("[DEBUG] First 5 entries:")
         for i, (k, v) in enumerate(list(GICS_SECTOR_CACHE.items())[:5]):
           print(f"  {k}: {v}")
 
       else:
-        print("[WARN] No tables found in Wikipedia page")
+        print("[WARN] Specific table (id='constituents') not found.")
+        
     else:
       print(f"[WARN] Wikipedia fetch failed: {r.status_code}")
-      
+          
   except Exception as e:
     print(f"[ERROR] Failed to load GICS Sectors: {e}")
     traceback.print_exc()
