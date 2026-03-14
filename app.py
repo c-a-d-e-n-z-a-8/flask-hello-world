@@ -3029,7 +3029,7 @@ HTML_TEMPLATE = """
         <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
         <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
         <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
-        <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">Nasdaq 100</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button>
       </div>
       <div style="font-size:14px;">
         <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
