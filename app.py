@@ -2,15 +2,13 @@ from flask import Flask, request, render_template, Response, jsonify, render_tem
 import yfinance as yf
 import pandas as pd
 import talib
-import requests
+#import requests
 import json
 import gc
 import os
 from itertools import dropwhile
 from io import StringIO
 import re
-
-import requests
 
 from urllib.parse import urljoin
 import random
@@ -22,12 +20,10 @@ from pyecharts.commons.utils import JsCode
 from datetime import date, datetime, timedelta
 from curl_cffi import requests
 import numpy as np
-from pyecharts import options as opts
 from pyecharts.charts import Line
 
 import time
 import traceback
-from curl_cffi import requests
 from bs4 import BeautifulSoup as BS
 from zoneinfo import ZoneInfo
 
@@ -445,7 +441,7 @@ def gemini_generate_content(prompt, model_name, api_key, use_search=True):
          "google_search": {}
        }
     ]
-  
+
   response = requests.post(url, headers=headers, json=data, timeout=600)
   if response.status_code == 200:
     result = response.json()
@@ -521,13 +517,6 @@ def gemini_analysis():
     else:
       try:
         stock_data = fetch_stock_data(ticker)
-        """
-        prompt_prefix = f'請根據{ticker}的歷史股價與技術分析（含10MA， 20MA， 60MA， 200MA， RSI， ATR， Volume， MACD Histogram (MACDH)， 60MA Bollinger Band (BBU， BBD)， 200MA Diff Z-Score (200MADZ)）配合對應的成交量 (Volume)，財報 (financials， quarterly_financials， cash_flow， quarterly_cashflow， info)，與期權資料，{additional_prompt}，列出近期財報亮點與分析師評論 (upgrades_downgrades， eps_trend， revenue_estimate) 的整理，且產生一份繁體中文個股分析報告，首先列出公司近期業務，然後列出目前價格與關鍵支持價位，以及根據財報預測數據所推算的未來股價，然後內容包含基本面 (數字要有YoY加減速的分析，以及free cashflow的研究，並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏與對應的PE PS PB ratio，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析， 例如是否有價量背離或技術指標與股價背離) 與期權市場的觀察與建議。 若資料中有台灣股市 (mainforce_tw) 主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中有short_stats，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。若資料中有台灣股市 (securities_financing_tw) 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)，分析市場空單狀況，嘎空可能性以及未來主力操作方向。'
-        prompt = f'{prompt_prefix}\n資料如下：\n{stock_data}'
-        #print('----------------------------------------')
-        #print(prompt)
-        #print('----------------------------------------')
-        """
         symbol_name = stock_data['symbol_name']
         history_table = dict_to_table(stock_data['history'])
         mf_tw_table = dict_to_table(stock_data['mainforce_tw'])
@@ -626,6 +615,7 @@ csv table
             use_search = True
           else:
             use_search = False
+          
           analysis = gemini_generate_content(prompt, model_name, api_key, use_search=use_search)
       except Exception as e:
         error = f"分析過程發生錯誤: {e}"
@@ -657,8 +647,8 @@ def gemini_analysis_user():
         else:
             try:
                 # 假設 fetch_stock_data 和 gemini_generate_content 已定義
-                symbol_name = stock_data['symbol_name']
                 stock_data = fetch_stock_data(ticker)
+                symbol_name = stock_data['symbol_name']
                 history_table = dict_to_table(stock_data['history'])
                 mf_tw_table = dict_to_table(stock_data['mainforce_tw'])
                 short_table = dict_to_table(stock_data['short_stats'])
@@ -742,7 +732,7 @@ csv table
                 print('----------------------------------------')
                 #use_search = "thinking" not in model_name.lower() and "reasoning" not in model_name.lower()
                 use_search = True
-                analysis = gemini_generate_content(prompt, model_name, api_key, use_search=use_search)
+                analysis = gemini_generate_content(prompt, model_name, gemini_key, use_search=use_search)
             except Exception as e:
                 error = f"分析過程發生錯誤: {e}"
 
