@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🚀Stock Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <style>
+  body { background-color: #f8f9fa; margin: 0; padding: 0; overflow: hidden; }
+  .container-fluid { padding: 0 !important; margin: 0 !important; }
+  .row { margin: 0 !important; }
+  .col-lg-8 { padding: 0 !important; } 
+  .card { border: none; border-radius: 0; margin: 0; }
+  .card-body { padding: 0 !important; }
+
+  .heatmap-header {
+    height: 50px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    gap: 15px;
+  }
+  #chart-container { 
+    width: 100%; 
+    height: calc(100vh - 50px); 
+  }
+
+  .notify-panel { height: 100vh; overflow-y: auto; background: #fff; border-left: 2px solid #ddd; }
+  .control-bar { padding: 10px; background: #eee; border-bottom: 1px solid #ccc; font-size: 0.9rem; }
+  
+  /* 表格樣式 */
+  .table-custom { font-size: 0.9rem; width: 100%; margin-bottom: 0; }
+  .table-custom th { background-color: #343a40; color: #fff; padding: 8px; font-weight: normal; }
+  .table-custom td { padding: 8px; vertical-align: middle; border-bottom: 1px solid #eee; }
+  .table-custom tr:hover { background-color: #f1f1f1; }
+  
+  .news-item { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 0.85rem; line-height: 1.4; }
+  .news-link {
+    color: #212529; /* 未點擊時：深黑色 (原本 text-dark 的顏色) */
+    text-decoration: none;
+  }
+  .news-link:visited {
+    color: #adb5bd; /* 已點擊時：淺灰色 */
+  }
+  .news-link:hover {
+    color: #000;    /* 滑鼠移過去變全黑 */
+    text-decoration: underline; /* 增加底線提示 */
+  }
+  
+  .up { color: #dc3545; font-weight: bold; }
+  .down { color: #198754; font-weight: bold; }
+  .neutral { color: #6c757d; font-weight: normal; }  /* 灰色,較淡 */
+  
+  /* 警示標籤 */
+  .alert-tag { font-size: 0.8rem; font-weight: bold; }
+  
+  /* Popup 容器 */
+  .stock-popup {
+    position: fixed;
+    display: none;
+    z-index: 9999;
+    background: white;
+    border: 2px solid #333;
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    pointer-events: none; /* 避免圖片擋住滑鼠事件 */
+  }
+
+  .stock-popup img {
+    display: block;
+    max-width: 800px;
+    max-height: 600px;
+    width: auto;
+    height: auto;
+  }
+
+  .stock-popup .loading {
+    padding: 20px;
+    text-align: center;
+    color: #666;
+  }
+
+  /* 股票代碼 hover 效果 */
+  .stock-symbol-hover {
+    cursor: pointer;
+    position: relative;
+  }
+
+  .stock-symbol-hover:hover {
+    background-color: #e3f2fd;
+  }
+  
+  /* [新增] Tooltip 圖片預設樣式 (電腦版) */
+  .chart-tooltip-img {
+    width: 800px;
+    height: auto;
+    display: block;
+  }
+
+  /* ========================================= */
+  /* [核心修正] Mobile Mode 強制滿版樣式 */
+  /* ========================================= */
+  
+  /* 1. Body 開放滾動 */
+  body.mobile-mode { 
+    overflow: auto !important; 
+  }
+
+  /* 2. Monitor 區塊：固定高度、移除左邊框、增加下分隔線 */
+  body.mobile-mode .notify-panel { 
+    height: 500px;      
+    overflow-y: auto; 
+    border-left: none; 
+    border-bottom: 5px solid #ddd;
+  }
+
+  /* 3. Heatmap 區塊：固定高度 */
+  body.mobile-mode #chart-container {
+    height: 600px;      
+  }
+
+  /* Tooltip 兩欄佈局 */
+  .tooltip-two-columns {
+    display: flex;
+    gap: 20px;
+  }
+
+  .tooltip-left-column {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .tooltip-right-column {
+    flex: 1;
+    min-width: 180px;
+    border-left: 1px solid #ddd;
+    padding-left: 15px;
+  }
+
+  /* [新增] Mobile Mode: 改為垂直堆疊 */
+  body.mobile-mode .tooltip-two-columns {
+    flex-direction: column;  /* 垂直排列 */
+    gap: 10px;
+  }
+
+  body.mobile-mode .tooltip-right-column {
+    border-left: none;           /* 移除左邊框 */
+    border-top: 1px solid #ddd;  /* 改為上邊框 */
+    padding-left: 0;
+    padding-top: 10px;
+  }
+
+  /* 4. Tooltip 圖片縮小 */
+  body.mobile-mode .chart-tooltip-img {
+    width: 200px !important;
+  }
+
+  /* 5. [關鍵修正] 強制改變排列與寬度 */
+  body.mobile-mode .main-row {
+    flex-direction: column-reverse !important; /* 讓 Monitor 跑到上面 */
+  }
+
+  /* 這裡就是解決無法滿版的核心代碼 */
+  body.mobile-mode .main-row > div {
+    width: 100% !important;     /* 無視 col-lg-* 的寬度限制 */
+    max-width: 100% !important; /* 確保不被限制 */
+    flex: 0 0 100% !important;  /* 強制 Flex 佔滿整行 */
+    padding: 0 !important;      /* 移除欄位預設間距，達成邊對邊滿版 */
+  }  
+  </style>
+</head>
+<body>
+
+<div class="container-fluid">
+  <div class="row main-row">
+  <div class="col-lg-8">
+    <div class="heatmap-header">
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-dark active" onclick="setMarket(this, 'twse', 'INDEX')">上市指數</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'twse', 'EQUITY')">上市個股</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
+        <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">Nasdaq 100</button>
+      </div>
+      <div style="font-size:14px;">
+        <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
+        <label class="ms-2" style="cursor:pointer"><input type="radio" name="area_metric" value="marketValueWeight" onchange="updateHeatmap()"> 市值</label>
+      </div>
+    </div>
+    <div id="chart-container"></div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="notify-panel">
+    
+    <div class="control-bar d-flex justify-content-between align-items-center">
+       <span class="fw-bold">Monitor System</span>
+       <div class="d-flex align-items-center">
+         <span class="badge bg-secondary" id="nt-time">--:--</span>
+         <span id="audio-btn" class="ms-2" style="cursor:pointer; font-size:1.1rem;" onclick="tryEnableSound()" title="點擊以啟用音效">🔇</span>
+         <button class="btn btn-sm btn-outline-secondary ms-2" style="padding: 0px 6px; font-size: 0.8rem;" onclick="resetMonitor()">Reset</button>
+       </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-body">
+         <table class="table-custom">
+            <thead>
+               <tr>
+                <th style="width: 20%">股票</th>
+                <th style="width: 20%">價/幅</th>
+                <th style="width: 15%">變動率</th>
+                <th style="width: 45%">警示</th>
+               </tr>
+            </thead>
+            <tbody id="stock-table-body">
+               <tr><td colspan="4" class="text-center text-muted">載入中...</td></tr>
+            </tbody>
+         </table>
+      </div>
+    </div>
+
+    <div class="card mt-2">
+      <div class="card-header bg-secondary text-white rounded-0" style="padding: 5px 10px; font-size: 0.9rem;">PTT Stock / News</div>
+      <div class="card-body" id="news-container">
+       <div class="text-center p-3 text-muted">載入中...</div>
+      </div>
+    </div>
+    
+    </div>
+  </div>
+  </div>
+</div>
+
+<script>
+let chartInstance = null;
+let currentMarket = 'twse';
+let currentType = 'INDEX';
+
+function fmtNum(n) { if(n === undefined) return '0'; return n.toLocaleString('en-US'); }
+function fmtFloat(n, d=2) { if(n === undefined) return '0.00'; return n.toFixed(d); }
+
+
+
+
+function setMarket(btn, market, type) {
+  document.querySelectorAll('.btn-group button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentMarket = market;
+  currentType = type;
+  updateHeatmap();
+}
+
+
+
+
+function tooltipFormatter(info) {
+  var val = info.data.value; 
+  if (!val) { val = info.value; } 
+  
+  var titleSize = '18px';
+  var bodySize = '16px';
+  var styleTitle = `font-family: san-serif; font-size:\${titleSize}; font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:5px; color:#000;`;
+  var styleBody = `color:#000; font-size:\${bodySize}; line-height:1.6;`;
+  var styleRow = 'display:flex; justify-content:space-between;'; 
+
+  if (Array.isArray(val)) {
+    var name = info.name;
+    var symbol = info.data.id || '';
+    
+    var chgPct = fmtFloat(val[1]);
+    var close = fmtFloat(val[2]);
+    var open = fmtFloat(val[4]);
+    var high = fmtFloat(val[5]);
+    var low = fmtFloat(val[6]);
+    var change = fmtFloat(val[7]);
+    var vol = fmtNum(val[8]);
+    var valMoney = fmtNum(val[9]);
+    
+    var chgColor = val[1] >= 0 ? '#ff3333' : '#00cc44'; 
+    var chgSign = val[1] >= 0 ? '+' : '';
+
+    var textContent = '';
+    
+    if (currentMarket === 'sp500' || currentMarket === 'ndx') {
+      // S&P 500：只顯示收盤價和漲跌（單欄）
+      textContent = `
+        <div style="\${styleRow}"><span>收盤價：</span><b>\${close}</b></div>
+        <div style="\${styleRow}"><span>漲跌：</span><span style="color:\${chgColor};font-weight:bold">\${change} (\${chgSign}\${chgPct}%)</span></div>
+      `;
+    } else {
+      // === [使用 CSS Class 控制佈局] ===
+      
+      // 左欄：價格資訊
+      var leftColumn = `
+        <div style="\${styleRow}"><span>收盤價：</span><b>\${close}</b></div>
+        <div style="\${styleRow}"><span>漲跌：</span><span style="color:\${chgColor};font-weight:bold">\${change} (\${chgSign}\${chgPct}%)</span></div>
+        <div style="\${styleRow}"><span>開盤價：</span><span>\${open}</span></div>
+        <div style="\${styleRow}"><span>最高價：</span><span>\${high}</span></div>
+        <div style="\${styleRow}"><span>最低價：</span><span>\${low}</span></div>
+      `;
+      
+      // 右欄：成交資訊（僅個股顯示）
+      var rightColumn = '';
+      if (currentType === 'EQUITY') {
+        rightColumn = `
+          <div class="tooltip-right-column">
+            <div style="\${styleRow}"><span>成交量：</span><span>\${vol}</span></div>
+            <div style="\${styleRow}"><span>成交金額：</span><span>\${valMoney}</span></div>
+          </div>
+        `;
+      }
+      
+      // 組合左右兩欄
+      if (rightColumn) {
+        textContent = `
+          <div class="tooltip-two-columns">
+            <div class="tooltip-left-column">
+              \${leftColumn}
+            </div>
+            \${rightColumn}
+          </div>
+        `;
+      } else {
+        // 如果是指數（沒有成交資訊），只顯示左欄
+        textContent = leftColumn;
+      }
+    }
+
+    var imageContent = "";
+    if (currentType === 'EQUITY' && symbol) {
+        var imgUrl = '';
+      
+      // === [新增] 判斷市場來源 ===
+      if (currentMarket === 'sp500' || currentMarket === 'ndx') {
+        var finvizSymbol = symbol.replace(/\./g, '-'); 
+        imgUrl = `https://charts2.finviz.com/chart.ashx?t=\${finvizSymbol}&ta=1&ty=c&p=d&s=l`;
+      } else {
+        var stockCode = symbol.split('.')[0];
+        imgUrl = `https://stock.wearn.com/finance_chart.asp?stockid=\${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
+      }
+      
+      imageContent = `
+        <div style="margin-top: 10px; background: #fff; padding: 2px; border: 1px solid #eee; text-align: center;">
+           <img src="\${imgUrl}" class="chart-tooltip-img" alt="Chart" style="display:inline-block;">
+        </div>
+      `;
+    }
+
+    var finalContent = "";
+    if (imageContent) {
+      finalContent = `
+        <div>
+           <div style="\${styleBody}">\${textContent}</div>
+           \${imageContent}
+        </div>
+      `;
+    } else {
+      finalContent = `<div style="\${styleBody}">\${textContent}</div>`;
+    }
+    
+    return `<div style="\${styleTitle}">\${name} (\${symbol})</div>\${finalContent}`;
+  } else {
+    var displayVal = typeof val === 'number' ? val.toFixed(2) : 'N/A';
+    return `<div style="\${styleTitle}">\${info.name}</div><div style="\${styleBody}">板塊總權重: \${displayVal}</div>`;
+  }
+}
+
+
+
+
+function labelFormatterIndex(params) {
+  if (Array.isArray(params.value)) {
+  var price = params.value[2] ? params.value[2].toFixed(2) : '0.00';
+  var chg = params.value[1] ? params.value[1].toFixed(2) + '%' : '0.00%';
+  return params.name + '\\n' + price + ' | ' + chg;
+  }
+  return params.name;
+}
+
+
+
+
+function labelFormatter(params) {
+  if (Array.isArray(params.value)) {
+  var symbol = params.data.id || ''; 
+  var price = params.value[2] ? params.value[2].toFixed(2) : '0.00';
+  var chg = params.value[1] ? params.value[1].toFixed(2) + '%' : '0.00%';
+  return '{name|' + params.name + '(' + symbol + ')}\\n{val|' + price + ' | ' + chg + '}';
+  }
+  return params.name;
+}
+
+
+
+
+// 檢查是否在交易時間內(含週末判斷)
+function isTwTradingHours() {
+  const now = new Date();
+  // 轉換為台北時間 (UTC+8)
+  const taipeiTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+      
+  const day = taipeiTime.getDay(); // 0=週日, 6=週六
+  if (day === 0 || day === 6) return false; // 週末不交易
+
+  const hours = taipeiTime.getHours();
+  const minutes = taipeiTime.getMinutes();
+  const currentTime = hours * 60 + minutes; // 轉換為分鐘
+  
+  const startTime = 8 * 60 + 30;  // 08:30 = 510 分鐘
+  const endTime = 14 * 60 + 30;   // 14:30 = 870 分鐘
+  
+  return currentTime >= startTime && currentTime <= endTime;
+}
+
+
+
+
+// 檢查是否在美股交易時間內
+function isUsTradingHours() {
+  const now = new Date();
+  // 轉換為美東時間 (ET)
+  const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  
+  const day = etTime.getDay(); // 0=週日, 6=週六
+  if (day === 0 || day === 6) return false; // 週末不交易
+  
+  const hours = etTime.getHours();
+  const minutes = etTime.getMinutes();
+  const currentTime = hours * 60 + minutes;
+  
+  const startTime = 9 * 60 + 30;   // 09:30
+  const endTime = 16 * 60;          // 16:00
+  
+  return currentTime >= startTime && currentTime <= endTime;
+}
+
+
+
+
+// 條件式更新 Heatmap
+function conditionalUpdateHeatmap() {
+  if (currentMarket === 'sp500' || currentMarket === 'ndx') {
+    if (isUsTradingHours()) {
+      console.log('美股交易時間內，更新 Heatmap');
+      updateHeatmap();
+    } else {
+      console.log('美股非交易時間，跳過更新');
+    }
+  } else if (currentMarket === 'twse' || currentMarket === 'otc') {
+    if (isTwTradingHours()) {
+      console.log('台股交易時間內，更新 Heatmap');
+      updateHeatmap();
+    } else {
+      console.log('台股非交易時間，跳過更新');
+    }
+  } else {
+    // 其他市場直接更新
+    console.log(`\${currentMarket} 市場，直接更新`);
+    updateHeatmap();
+  }
+}
+
+
+
+
+async function updateHeatmap() {
+  // 檢查實例是否已存在
+  if(!chartInstance) {
+    console.log("[DEBUG] Initializing ECharts Instance...");
+    chartInstance = echarts.init(document.getElementById('chart-container'));
+
+    // 雙擊事件
+    chartInstance.on('dblclick', function(params) {
+      if (params.data && params.data.id) {
+        const symbol = params.data.id;
+        if (symbol) {
+          if (currentMarket === 'sp500' || currentMarket === 'ndx') {
+            // 美股：開啟 TradingView
+            window.open(`https://www.tradingview.com/chart/?symbol=\${symbol}`, '_blank');
+          } else {
+            // 台股：開啟 CMoney 論壇
+            const stockCode = symbol.split('.')[0];
+            window.open(`https://www.cmoney.tw/forum/stock/\${stockCode}`, '_blank');
+          }
+        } 
+      }
+    });
+  }
+
+  chartInstance.showLoading();
+  const areaVal = document.querySelector('input[name="area_metric"]:checked').value;
+  
+  // [新增] 判斷是否為手機模式
+  const isMobile = document.body.classList.contains('mobile-mode');
+
+  try {
+    const res = await fetch(`/twheatmap/api/data?market=\${currentMarket}&type=\${currentType}&area=\${areaVal}`);
+    const treeData = await res.json();
+    
+    const option = {
+      tooltip: { 
+        formatter: tooltipFormatter,
+        // [優化] 手機版 tooltip 限制在容器內，避免超出螢幕
+        confine: true, 
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderColor: '#ccc',
+        borderWidth: 1,
+        padding: 10
+      },
+      visualMap: {
+        type: 'continuous', dimension: 1, min: -10, max: 10,
+        inRange: { color: ['#31C950', '#FFF085', '#FB2C36'] }, 
+        show: true, orient: 'vertical', left: 10, top: 'middle',
+        itemHeight: 80, textStyle: { color: '#000'}
+      },
+      series: [{
+        type: 'treemap', 
+        data: treeData, 
+        breadcrumb: { show: true }, 
+        leafDepth: null, 
+        
+        // [關鍵修正] 如果是手機模式，關閉 roam (拖曳/縮放)，讓使用者可以滑動網頁
+        roam: !isMobile, 
+        width: '100%', height: '100%', top: 0, bottom: 0, left: 0, right: 0,
+        levels: currentType === 'INDEX' ? [] : [
+          { itemStyle: { borderColor: '#fff', borderWidth: 0, gapWidth: 0 } },
+          { colorSaturation: [0, 1], itemStyle: { borderColor: '#555', borderWidth: 1, gapWidth: 2 }, upperLabel: { show: true, height: 30, color: '#000', fontWeight: 'bold' } },
+          { colorSaturation: [0, 1], itemStyle: { borderColor: '#fff', borderWidth: 1, gapWidth: 1 }, label: { show: true, position: 'insideTopLeft', formatter: labelFormatter, rich: { name: { fontSize: 14, fontWeight: 'bold', color: '#000'}, val: { fontSize: 12, color: '#333'} } } }
+        ],
+        label: { show: true, formatter: labelFormatterIndex, fontSize: 14, color: '#000' }
+      }]
+    };
+    chartInstance.setOption(option);
+    chartInstance.hideLoading();
+  } catch(e) { 
+    console.error('[ERROR] Heatmap update failed:', e); 
+    chartInstance.hideLoading();
+  }
+}
+
+
+
+
+// [新增] 將 Yahoo 代碼轉換為 TradingView URL
+function getYahooToTradingViewUrl(symbol) {
+  let tvSymbol = symbol;
+
+  // 1. 特殊指數與期貨對照表
+  const indexMap = {
+    '^TWII': 'TWSE:TAIEX',      // 加權指數
+    '^TWOII': 'TPEX:TPEX',      // 櫃買指數
+    'FITX': 'TAIFEX:TX1!',      // 台指期 (使用 TX1! 代表連續月)
+    '^GSPC': 'SP:SPX',          // S&P 500
+    '^NDX': 'TVC:NDX',          // Nasdaq 100
+    '^IXIC': 'TVC:IXIC',        // Nasdaq Composite
+    '^DJI': 'DJ:DJI',           // 道瓊
+    '^N225': 'TVC:NI225',       // Nikkei 225
+    '^KS11': 'KRX:KOSPI',       // KOSPI Composite Index
+    '^VIX': 'VIX',
+    '^VXN': 'VXN',
+    'ES=F': 'CME_MINI:ES1!',    // S&P 500 期貨
+    'NQ=F': 'CME_MINI:NQ1!',    // Nasdaq 期貨
+    'YM=F': 'CBOT_MINI:YM1!',   // 道瓊期貨
+    'TWD=X': 'USDTWD',
+    'JPYTWD=X': 'JPYTWD',
+    'BTC-USD': 'BTCUSD',
+    'ETH-USD': 'ETHUSD',
+    'SOL-USD': 'SOLUSD',
+    'DOGE-USD': 'DOGEUSD'
+  };
+
+  if (indexMap[symbol]) {
+    tvSymbol = indexMap[symbol];
+  }
+  
+  // 2. 台股上市 (Yahoo: 2330.TW -> TV: TWSE:2330)
+  else if (symbol.endsWith('.TW')) {
+    tvSymbol = 'TWSE:' + symbol.replace('.TW', '');
+  } 
+  // 3. 台股上櫃 (Yahoo: 3105.TWO -> TV: TPEX:3105)
+  else if (symbol.endsWith('.TWO')) {
+    tvSymbol = 'TPEX:' + symbol.replace('.TWO', '');
+  }
+  // 4. 滬深 (Yahoo: 000300.SS -> TV: SSE:000300)
+  else if (symbol.endsWith('.SS')) {
+    tvSymbol = 'SSE:' + symbol.replace('.SS', '');
+  }  
+  // 5. 美股 (Yahoo: BRK-B -> TV: BRK.B, 其他通常通用)
+  else {
+    tvSymbol = symbol.replace('-', '.'); 
+  }
+
+  // 回傳 TradingView 超級圖表連結
+  return `https://www.tradingview.com/chart/?symbol=\${tvSymbol}`;
+}
+
+
+
+
+// [新增] 取得社群討論區連結 (CMoney / 富途)
+function getCommunityLink(symbol) {
+
+  // 1. 特殊指數與期貨對照表
+  const communityMap = {
+    '^TWII': 'https://www.cmoney.tw/forum/market',      // 加權指數
+    '^TWOII': 'https://www.cmoney.tw/forum/stock/TWC00',      // 櫃買指數
+    'FITX': 'https://www.cmoney.tw/forum/futures/TXF1?s=p',      // 台指期
+    '^GSPC': 'https://www.futunn.com/hk/index/.SPX-US/community',           // S&P 500
+    '^IXIC': 'https://www.futunn.com/hk/index/.IXIC-US',        // Nasdaq Composite
+    '^DJI': 'https://www.futunn.com/hk/index/.DJI-US',            // 道瓊
+  };
+
+  // 修正點：如果對照表有資料，直接回傳該網址
+  if (communityMap[symbol]) {
+    return communityMap[symbol];
+  } 
+  
+  // 2. 判斷是否包含 .TW (涵蓋 .TW 與 .TWO)
+  else if (symbol.includes('.TW')) {
+    // 移除 .TW 或 .TWO，只保留代碼 (e.g., 2330.TW -> 2330)
+    const code = symbol.split('.')[0];
+    return `https://www.cmoney.tw/forum/stock/\${code}`;
+  } 
+  
+  // 3. 美股或其他：使用富途牛牛 (需加上 -US)
+  else {
+    return `https://www.futunn.com/hk/stock/\${symbol}-US/community`;
+  }
+}
+
+
+
+
+// [新增] 音效狀態旗標
+let isSoundEnabled = false;
+
+
+
+
+// [新增] 嘗試啟用音效 (解鎖瀏覽器限制)
+function tryEnableSound() {
+  const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+  audio.volume = 0; // 靜音播放，僅為了取得權限
+  
+  audio.play().then(() => {
+    // 播放成功，代表已取得權限
+    isSoundEnabled = true;
+    const btn = document.getElementById('audio-btn');
+    if(btn) {
+        btn.innerText = "🔊";
+        btn.title = "音效已啟用 (點擊測試)";
+        btn.style.color = "#198754"; // 綠色
+    }
+    console.log("[System] Audio Autoplay Unlocked!");
+  }).catch(e => {
+    console.warn("音效啟用失敗 (需使用者互動):", e);
+  });
+}
+
+
+
+
+// [修改] 警示音效函式 (增強版)
+function playAlertSound() {
+  const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+  audio.volume = 1.0; 
+  
+  audio.play().then(() => {
+    // 如果這次播放成功，順便更新 UI 狀態
+    if (!isSoundEnabled) {
+        isSoundEnabled = true;
+        document.getElementById('audio-btn').innerText = "🔊";
+        document.getElementById('audio-btn').style.color = "#198754";
+    }
+  }).catch(e => {
+    console.warn("警示音被阻擋，請點擊頁面以啟用音效");
+    // 讓喇叭圖示變紅閃爍，提示使用者去點擊
+    const btn = document.getElementById('audio-btn');
+    if(btn) {
+        btn.style.color = "#dc3545"; // 紅色
+        btn.innerText = "🔇";
+        // 簡單的閃爍效果
+        setTimeout(() => btn.style.color = "", 300);
+        setTimeout(() => btn.style.color = "#dc3545", 600);
+    }
+  });
+}
+
+
+
+
+let flashInterval = null;
+const originalTitle = document.title; // 記住原本的標題 (🚀Stock Dashboard)
+
+// [新增] 開始閃爍標題
+function startTabFlashing() {
+  if (flashInterval) return; // 如果已經在閃爍，就不用重複啟動
+
+  let showWarning = true;
+  flashInterval = setInterval(() => {
+    // 在 "原本標題" 與 "警示文字" 之間切換
+    document.title = showWarning ? "⚠️【急拉/急殺警示】" : originalTitle;
+    showWarning = !showWarning;
+  }, 800); // 每 0.8 秒切換一次
+}
+
+
+
+
+// [新增] 停止閃爍標題 (回復原狀)
+function stopTabFlashing() {
+  if (flashInterval) {
+    clearInterval(flashInterval);
+    flashInterval = null;
+    document.title = originalTitle; // 強制還原標題
+  }
+}
+
+
+
+
+async function updateNotify() {
+  try {
+    const res = await fetch('/api/monitor');
+    const data = await res.json();
+    document.getElementById('nt-time').innerText = data.timestamp;
+
+    let tableHtml = "";
+    
+    // [新增] 用來標記是否需要發出警報聲
+    let triggerAlertSound = false;
+    
+    data.rows.forEach(row => {
+      // 數值判斷與格式化
+      let changeValue = parseFloat(row.change.replace('%', ''));
+      let colorClass = "neutral";
+      if (changeValue < 0) colorClass = "down";
+      else if (changeValue > 0) colorClass = "up";
+      
+      // 格式化 change_val (加上 + 號，並保留兩位小數)
+      let changeValStr = (row.change_val > 0 ? "+" : "") + row.change_val.toFixed(2);
+      
+      // delta 顏色與數值格式化
+      let deltaClass = "neutral";
+      if (row.delta > 0) deltaClass = "up";
+      else if (row.delta < 0) deltaClass = "down";
+
+      let deltaValStr = (row.delta_val > 0 ? "+" : "") + row.delta_val.toFixed(2);
+      
+      // 1. 取得 TradingView 連結 (這是原本的)
+      const tvLink = getYahooToTradingViewUrl(row.symbol);
+      
+      // 2. [新增] 取得社群連結
+      const commLink = getCommunityLink(row.symbol);
+      
+      // ============================================================
+      // [新增] 檢查警示訊息關鍵字
+      // ============================================================
+      if (row.alert && (row.alert.includes("急拉") || row.alert.includes("急殺"))) {
+        triggerAlertSound = true;
+      }
+      // ============================================================
+      
+      tableHtml += `
+      <tr>
+        <td class="stock-symbol-hover" data-symbol="\${row.symbol}" style="padding: 0; height: 1px;">
+           <a href="\${tvLink}" target="_blank" style="display: flex; flex-direction: column; justify-content: center; width: 100%; height: 100%; padding: 8px; text-decoration:none; color:inherit;">
+             <div class="fw-bold">\${row.symbol}</div>
+             <div class="small text-muted">\${row.name}</div>
+           </a>
+        </td>
+        <td>
+           <div class="fw-bold">\${row.price}</div>
+           <div class="\${colorClass} small">\${row.change} (\${changeValStr})</div>
+        </td>
+        <td>
+           <div class="\${deltaClass}">\${(row.delta * 100).toFixed(2)}%</div>
+           <div class="\${deltaClass} small">(\${deltaValStr})</div>
+        </td>
+        <td style="padding: 0; height: 1px;">
+           <a href="\${commLink}" target="_blank" style="display: flex; align-items: center; width: 100%; height: 100%; padding: 8px; text-decoration:none; color:inherit;">
+             <div style="width: 100%">\${row.alert || ""}</div>
+           </a>
+        </td>
+      </tr>`;
+    });
+    document.getElementById('stock-table-body').innerHTML = tableHtml || '<tr><td colspan="4" class="text-center text-muted">無資料</td></tr>';
+
+    // [新增] 如果偵測到關鍵字，播放音效
+    if (triggerAlertSound) {
+      playAlertSound();
+      startTabFlashing();
+    }
+
+    // 新聞部分
+    let newsHtml = "";
+    if (data.news && data.news.length > 0) {
+      data.news.forEach(n => {
+        newsHtml += `
+        <div class="news-item">
+            <span class="news-tag">\${n.tag}</span>
+            <small class="text-muted" style="margin-left: 5px; margin-right: 5px;">\${n.date}</small>
+            <a href="\${n.link}" target="_blank" class="news-link">\${n.title}</a>
+        </div>`;
+      });
+      document.getElementById('news-container').innerHTML = newsHtml;
+    }
+
+    // ===== 新增：綁定 hover 事件 =====
+    attachStockHoverEvents();
+    
+  } catch(e) { console.error("Notify Error:", e); }
+}
+
+
+
+// 新增：Reset 按鈕功能
+async function resetMonitor() {
+  if(!confirm("確定要重新載入設定與重算均線嗎？")) return;
+  
+  // 讓按鈕暫時失效顯示載入中
+  const btn = document.querySelector("button[onclick='resetMonitor()']");
+  const originalText = btn.innerText;
+  btn.innerText = "Processing...";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/reset');
+    const data = await res.json();
+    alert(data.message);
+    // 成功後立即刷新列表
+    updateNotify();
+  } catch(e) {
+    console.error(e);
+    alert("Reset Failed: " + e);
+  } finally {
+    btn.innerText = originalText;
+    btn.disabled = false;
+  }
+}
+
+
+
+
+// ===== 新增函數：處理股票代碼 hover 事件 =====
+function attachStockHoverEvents() {
+  const stockCells = document.querySelectorAll('.stock-symbol-hover');
+  
+  stockCells.forEach(cell => {
+    cell.addEventListener('mouseenter', handleStockHover);
+    cell.addEventListener('mouseleave', handleStockLeave);
+  });
+}
+
+
+
+
+const CHART_URL_MAP = {
+  // === 台股相關 ===
+  '^TWII': 'https://stock.wearn.com/finance_chart.asp?stockid=IDXWT&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1',
+  '^TWOII': 'https://stock.wearn.com/finance_chart.asp?stockid=IDXOT&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1',
+  'FITX': 'https://stock.wearn.com/finance_chart.asp?stockid=WTX&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1', // 台指期
+
+  // === 美股期貨 (維持原本 Intraday 5分K) ===
+  'ES=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@es&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // S&P 500 Futures
+  'NQ=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@nq&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // Nasdaq 100 Futures
+  'YM=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@ym&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // Dow Jones Futures
+
+  // === 美股現貨指數 (使用日線 tf=d 看趨勢) ===
+  '^GSPC': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=SPY&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // S&P 500 (用 SPY 代表)
+  '^IXIC': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=QQQ&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // Nasdaq (用 QQQ 代表)
+  '^DJI':  'https://charts2-node.finviz.com/chart.ashx?cs=m&t=DIA&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // Dow Jones (用 DIA 代表)
+  '^VIX':  'https://charts2-node.finviz.com/chart.ashx?cs=m&t=VIX&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 恐慌指數
+
+  // === 匯率 Forex (Finviz 代碼對應) ===
+  'DX-Y.NYB': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=DX&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d',     // 美元指數 (DXY)
+  'EURUSD=X': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=EURUSD&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 歐元/美元
+  'JPY=X':    'https://charts2-node.finviz.com/chart.ashx?cs=m&t=USDJPY&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 美元/日幣
+  'GBPUSD=X': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=GBPUSD&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 英鎊/美元
+
+  // === 原物料 Commodities ===
+  'GC=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@GC&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 黃金期貨
+  'CL=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@CL&tf=d&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // 原油期貨
+
+  // === 加密貨幣 ===
+  'BTC-USD': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@btcusd&tf=d&ct=candle_stick&tm=d',
+  'ETH-USD': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@ethusd&tf=d&ct=candle_stick&tm=d'
+};
+
+
+
+
+function handleStockHover(event) {
+  const symbol = event.currentTarget.getAttribute('data-symbol');
+   
+  // 1. 優先查表 (Exact Match)
+  let imageUrl = CHART_URL_MAP[symbol];
+
+  // 2. 如果查不到，再處理動態邏輯
+  if (!imageUrl) {
+    if (symbol.includes('.TW')) {
+      const stockCode = symbol.split('.')[0];
+      imageUrl = `https://stock.wearn.com/finance_chart.asp?stockid=\${stockCode}&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1`;
+    } else {
+      // 預設美股/其他
+      var finvizSymbol = symbol.replace(/\./g, '-'); 
+      imageUrl = `https://charts2.finviz.com/chart.ashx?t=\${finvizSymbol}&ta=1&ty=c&p=d&s=l`;
+    }
+  }
+  
+  let popup = document.getElementById('stock-chart-popup');
+  if (!popup) {
+    popup = document.createElement('div');
+    popup.id = 'stock-chart-popup';
+    popup.className = 'stock-popup';
+    document.body.appendChild(popup);
+  }
+  
+  popup.innerHTML = '<div class="loading">載入圖表中...</div>';
+  popup.style.display = 'block';
+  
+  // 固定位置：螢幕中央
+  popup.style.left = '50%';
+  popup.style.top = '50%';
+  popup.style.transform = 'translate(-50%, -50%)';
+  
+  const img = new Image();
+  img.onload = () => {
+    popup.innerHTML = '';
+    popup.appendChild(img);
+  };
+  img.onerror = () => {
+    popup.innerHTML = '<div class="loading" style="color: red;">圖表載入失敗</div>';
+  };
+  img.src = imageUrl;
+}
+
+
+
+
+function handleStockLeave(event) {
+  const popup = document.getElementById('stock-chart-popup');
+  if (popup) {
+    popup.style.display = 'none';
+    
+    // 移除滑鼠移動監聽
+    if (popup._updatePosition) {
+      event.currentTarget.removeEventListener('mousemove', popup._updatePosition);
+      popup._updatePosition = null;
+    }
+  }
+}
+
+
+
+
+window.addEventListener('resize', () => { if(chartInstance) chartInstance.resize(); });
+
+
+
+
+// [修改] 全域點擊監聽
+document.addEventListener('click', function globalInteract() {
+  // 1. 嘗試解鎖音效
+  if (!isSoundEnabled) {
+      tryEnableSound();
+  }
+
+  // 2. [新增] 停止標題閃爍 (代表使用者已經看到並處理了)
+  stopTabFlashing();  
+}, { once: false });
+
+
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  
+  // [新增] 裝置偵測邏輯
+  function checkMobileMode() {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    
+    // 判斷是否為 Android, iOS (iPhone/iPad/iPod) 或其他行動裝置
+    // 這裡我們把 iPad 也強制歸類為 Mobile Mode，以符合您的需求
+    const isMobile = /android|ipad|iphone|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+    
+    // 或者：如果螢幕寬度真的非常小 (例如 < 768px)，也強制切換
+    const isSmallScreen = window.innerWidth < 768;
+
+    if (isMobile || isSmallScreen) {
+      document.body.classList.add('mobile-mode');
+      console.log("[System] Mobile Mode Activated (Reason: Device or Screen Size)");
+    } else {
+      document.body.classList.remove('mobile-mode');
+      console.log("[System] Desktop Mode Activated");
+    }
+  }
+
+  // 初始化時執行一次
+  checkMobileMode();
+  
+  // 當視窗縮放時也重新檢查 (選用，方便電腦測試)
+  window.addEventListener('resize', checkMobileMode);
+
+  // ... (原本的初始化代碼) ...
+  updateHeatmap();
+  updateNotify();
+  setInterval(conditionalUpdateHeatmap, 300000);
+  setInterval(updateNotify, 120000);
+});
+</script>
+
+<div id="stock-chart-popup" class="stock-popup"></div>
+</body>
+</html>
