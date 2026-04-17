@@ -305,7 +305,7 @@ def fetch_stock_data(ticker):
   hist = stock.history(period="2y", auto_adjust=True)        
   hist['ATR'] = talib.ATR(hist['High'], hist['Low'], hist['Close'], timeperiod=5)
   
-  hist.drop(['Open', 'High', 'Low', 'Stock Splits'], axis=1, inplace=True)
+  hist.drop(['Open', 'High', 'Low', 'Stock Splits'], axis=1, inplace=True, errors='ignore')
   gc.collect()
 
   hist['10MA'] = talib.SMA(hist[close], timeperiod=10)
@@ -346,6 +346,7 @@ def fetch_stock_data(ticker):
   quarterly_cashflow = stock.quarterly_cashflow.to_dict()
   #info = stock.info
   info = dict(dropwhile(lambda item: item[0] != 'previousClose', stock.info.items()))
+  #print(info)
   
   upgrades_downgrades = stock.upgrades_downgrades[:10].to_dict()
   eps_trend = stock.eps_trend.to_dict()
@@ -475,7 +476,7 @@ def dict_to_table(data: list[dict], limit=200, csv=True) -> str:
   if not data:
     return "無資料"
   df = pd.DataFrame(data).tail(limit)
-  if csv == True:
+  if csv:
     return df.to_csv(index=False)
   else:
     return df.to_string(index=False)
@@ -489,7 +490,7 @@ def dict_to_table_finance(data: list[dict], csv=True) -> str:
     return "無資料"
   df = pd.DataFrame(data)
   
-  if csv == True:
+  if csv:
     return df.to_csv(index=True)
   else:
     return df.to_string(index=True)
@@ -538,7 +539,7 @@ def gemini_analysis():
         prompt = f"""
 你是一個資深的華爾街分析師，擅長從基本面技術面籌碼面產生股票分析報告。請根據 {symbol_name} ({ticker}) 的下列資料進行分析並產生一份繁體中文個股分析報告，首先用簡單的語言解釋這家公司的業務：它解決什麼問題，誰為此付費，為什麼客戶選擇它而不是替代品。
 分解這家公司的收入流：哪些部門在增長，哪些在放緩，公司對頂級產品或客戶的依賴程度如何？解釋這家公司所在的行業：市場是在增長、穩定還是萎縮？什麼長期趨勢有利或不利於該業務？列出主要競爭對手：比較他們的定價權、產品實力、規模和競爭壁壘，突出這家公司明顯勝出或落後的地方。
-然後從網路上搜尋近半年公司相關新聞並以表格方式總結其對股價，經營業務，以及公司相關產品市場供需的影響，然後列出目前價格與關鍵支持價位，以及根據財報預測數據所推算的未來股價，內容包含基本面 (數字要有YoY加減速的分析，重點關注收入增長一致性、利潤率、債務水平、自由現金流強度和資本配置。並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏與對應的PE/PS/PB ratio，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析，例如是否有價量背離或技術指標與股價背離，或是型態上有破底翻、假突破、杯柄型態、上升旗型、下降旗型，或是 Mark Minervini 所提出的 Volatility Contraction Pattern 等典型股價走勢型態) 與期權市場的觀察與建議。 若mf_tw_table資料中有台灣股市主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中short_table有值，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。若資料中有台灣股市 (sf_tw_table) 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)，分析市場空單狀況，嘎空可能性以及未來主力操作方向。
+然後從網路上搜尋近半年公司相關新聞並以表格方式總結其對股價與經營業務的影響，然後列出目前價格與關鍵支持價位，以及根據財報預測數據所推算的未來股價，內容包含基本面 (數字要有YoY加減速的分析，重點關注收入增長一致性、利潤率、債務水平、自由現金流強度和資本配置。並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏與對應的PE/PS/PB ratio，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析，例如是否有價量背離或技術指標與股價背離，或是型態上有破底翻、假突破、杯柄型態、上升旗型、下降旗型，或是 Mark Minervini 所提出的 Volatility Contraction Pattern 等典型股價走勢型態) 與期權市場的觀察與建議。 若mf_tw_table資料中有台灣股市主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中short_table有值，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。若資料中有台灣股市 (sf_tw_table) 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)，分析市場空單狀況，嘎空可能性以及未來主力操作方向。
 接下來，識別這家公司的最大風險。包括業務風險、財務風險、監管威脅和可能永久性傷害業務的因素，評估管理團隊的歷史表現。他們過去執行情況如何？他們的決策如何影響長期股東？
 {additional_prompt}
 最後，根據上述的所有分析，總結你的投資建議。
@@ -609,18 +610,17 @@ csv table
           #response = model.generate_content(prompt)
           #analysis = response.text
 
-          # Auto-detect if search should be used
-          #use_search = "thinking" not in model_name.lower() and "reasoning" not in model_name.lower()
+          # Auto-detect if search should be used (disable for thinking/reasoning models)
+          use_search = "thinking" not in model_name.lower() and "reasoning" not in model_name.lower()
           if model_name == 'gemini-2.5-flash':
             use_search = True
           else:
             use_search = False
-          
           analysis = gemini_generate_content(prompt, model_name, api_key, use_search=use_search)
       except Exception as e:
         error = f"分析過程發生錯誤: {e}"
 
-  return render_template('analysis.html', analysis=analysis, error=error, ticker=ticker, model=model_name)
+  return render_template('analysis.html', analysis=analysis, error=error, ticker=ticker, model=model_name, additional_prompt=additional_prompt)
 
 
 
@@ -669,7 +669,7 @@ def gemini_analysis_user():
                 prompt = f"""
 你是一個資深的華爾街分析師，擅長從基本面技術面籌碼面產生股票分析報告。請根據 {symbol_name} ({ticker}) 的下列資料進行分析並產生一份繁體中文個股分析報告，首先用簡單的語言解釋這家公司的業務：它解決什麼問題，誰為此付費，為什麼客戶選擇它而不是替代品。
 分解這家公司的收入流：哪些部門在增長，哪些在放緩，公司對頂級產品或客戶的依賴程度如何？解釋這家公司所在的行業：市場是在增長、穩定還是萎縮？什麼長期趨勢有利或不利於該業務？列出主要競爭對手：比較他們的定價權、產品實力、規模和競爭壁壘，突出這家公司明顯勝出或落後的地方。
-然後從網路上搜尋近半年公司相關新聞並以表格方式總結其對股價，經營業務，以及公司相關產品市場供需的影響，然後列出目前價格與關鍵支持價位，以及根據財報預測數據所推算的未來股價，內容包含基本面 (數字要有YoY加減速的分析，重點關注收入增長一致性、利潤率、債務水平、自由現金流強度和資本配置。並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏與對應的PE/PS/PB ratio，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析，例如是否有價量背離或技術指標與股價背離，或是型態上有破底翻、假突破、杯柄型態、上升旗型、下降旗型，或是 Mark Minervini 所提出的 Volatility Contraction Pattern 等典型股價走勢型態) 與期權市場的觀察與建議。 若mf_tw_table資料中有台灣股市主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中short_table有值，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。若資料中有台灣股市 (sf_tw_table) 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)，分析市場空單狀況，嘎空可能性以及未來主力操作方向。
+然後從網路上搜尋近半年公司相關新聞並以表格方式總結其對股價與經營業務的影響，然後列出目前價格與關鍵支持價位，以及根據財報預測數據所推算的未來股價，內容包含基本面 (數字要有YoY加減速的分析，重點關注收入增長一致性、利潤率、債務水平、自由現金流強度和資本配置。並且根據年度財報預估與當季累積財報數字，預估後面一兩季的營收獲利起伏與對應的PE/PS/PB ratio，並且以表格列出每季EPS與營收增減的速度與加速度)、技術面 (配合成交量分析，例如是否有價量背離或技術指標與股價背離，或是型態上有破底翻、假突破、杯柄型態、上升旗型、下降旗型，或是 Mark Minervini 所提出的 Volatility Contraction Pattern 等典型股價走勢型態) 與期權市場的觀察與建議。 若mf_tw_table資料中有台灣股市主力當日買賣超 (mf)，主力買賣超累積 (mf_acc)，買賣家差數 (b_s)，順便分析主力吃或出貨狀況。若資料中short_table有值，根據SF (short floating) 與SR (short ratio) 分析市場空單狀況及嘎空可能性。若資料中有台灣股市 (sf_tw_table) 融資餘額 (BB)， 融券餘額 (SB)， 借券賣出餘額 (LSB)，分析市場空單狀況，嘎空可能性以及未來主力操作方向。
 接下來，識別這家公司的最大風險。包括業務風險、財務風險、監管威脅和可能永久性傷害業務的因素，評估管理團隊的歷史表現。他們過去執行情況如何？他們的決策如何影響長期股東？
 {additional_prompt}
 最後，根據上述的所有分析，總結你的投資建議。
@@ -730,8 +730,7 @@ csv table
 """
                 print(prompt)
                 print('----------------------------------------')
-                #use_search = "thinking" not in model_name.lower() and "reasoning" not in model_name.lower()
-                use_search = True
+                use_search = "thinking" not in model_name.lower() and "reasoning" not in model_name.lower()
                 analysis = gemini_generate_content(prompt, model_name, gemini_key, use_search=use_search)
             except Exception as e:
                 error = f"分析過程發生錯誤: {e}"
@@ -1696,7 +1695,63 @@ def industry_label(code) -> str:
 
 
 
+'''
+def init_sp500_sectors():
+  """初始化 S&P 500 的 GICS Sector 對應表 (只執行一次)"""
+  global GICS_SECTOR_CACHE
+  
+  if GICS_SECTOR_CACHE:  # 如果已經載入過就直接返回
+    print("[DEBUG] GICS Sector Cache already loaded.")
+    return
+  
+  try:
+    print("[DEBUG] Fetching S&P 500 GICS Sectors from Wikipedia...")
+    
+    # 使用 curl_cffi 的 impersonate 參數
+    r = requests.get(
+      SP500_WIKI_URL, 
+      impersonate="chrome120",
+      timeout=15
+    )
+    
+    print(f"[DEBUG] Wikipedia Response: {r.status_code}")
+    
+    if r.status_code == 200:
+      # 使用 pandas 讀取 HTML 表格
+      df_list = pd.read_html(r.text)
+      
+      if df_list:
+        df = df_list[0]  # 取第一個表格
+        
+        print(f"[DEBUG] Wikipedia Table Columns: {df.columns.tolist()}")
+        
+        # 建立 Symbol -> GICS Sector 的對應
+        for _, row in df.iterrows():
+          try:
+            symbol = str(row.get('Symbol', '')).strip()
+            sector = str(row.get('GICS Sector', 'Unknown')).strip()
+            
+            if symbol and symbol != 'nan':
+              GICS_SECTOR_CACHE[symbol] = sector
+          except Exception as e:
+            continue
+        
+        print(f"[DEBUG] GICS Sectors loaded: {len(GICS_SECTOR_CACHE)} symbols")
+        
+         # 驗證前 5 個
+        print("[DEBUG] First 5 entries:")
+        for i, (k, v) in enumerate(list(GICS_SECTOR_CACHE.items())[:5]):
+          print(f"  {k}: {v}")
 
+      else:
+        print("[WARN] No tables found in Wikipedia page")
+    else:
+      print(f"[WARN] Wikipedia fetch failed: {r.status_code}")
+      
+  except Exception as e:
+    print(f"[ERROR] Failed to load GICS Sectors: {e}")
+    traceback.print_exc()
+'''
 def init_sp500_sectors():
   """初始化 S&P 500 的 GICS Sector 對應表"""
   global GICS_SECTOR_CACHE
@@ -2627,7 +2682,7 @@ class StockMonitor:
             change_val = 0.0
           
           try:
-            delta = float(change_str.replace('%', '')) / 100
+            delta = float(change_pct_str.replace('%', '')) / 100
           except:
             delta = 0.0
 
@@ -2849,17 +2904,40 @@ HTML_TEMPLATE = """
   .card-body { padding: 0 !important; }
 
   .heatmap-header {
-    height: 50px;
+    height: auto;
+    min-height: 50px;
     background: #fff;
     border-bottom: 1px solid #ddd;
     display: flex;
+    flex-direction: row;
     align-items: center;
-    padding: 0 15px;
-    gap: 15px;
+    padding: 5px 15px;
+    gap: 8px;
+    flex-wrap: wrap;
   }
-  #chart-container { 
-    width: 100%; 
-    height: calc(100vh - 50px); 
+  .heatmap-header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .interval-bar {
+    margin-left: auto;
+    font-size: 12px;
+    color: #555;
+    white-space: nowrap;
+  }
+  .interval-bar select {
+    font-size: 11px;
+    padding: 1px 3px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .interval-bar label { margin-right: 4px; }
+  #chart-container {
+    width: 100%;
+    height: calc(100vh - 60px);
   }
 
   .notify-panel { height: 100vh; overflow-y: auto; background: #fff; border-left: 2px solid #ddd; }
@@ -2954,7 +3032,13 @@ HTML_TEMPLATE = """
 
   /* 3. Heatmap 區塊：固定高度 */
   body.mobile-mode #chart-container {
-    height: 600px;      
+    height: 600px;
+  }
+  body.mobile-mode .interval-bar {
+    margin-left: 0;
+    width: 100%;
+    border-top: 1px solid #eee;
+    padding-top: 4px;
   }
 
   /* Tooltip 兩欄佈局 */
@@ -3004,7 +3088,49 @@ HTML_TEMPLATE = """
     max-width: 100% !important; /* 確保不被限制 */
     flex: 0 0 100% !important;  /* 強制 Flex 佔滿整行 */
     padding: 0 !important;      /* 移除欄位預設間距，達成邊對邊滿版 */
-  }  
+  }
+
+  /* === Portfolio Sparkline Grid === */
+  #portfolio-grid {
+    display: none;
+    width: 100%;
+    height: calc(100vh - 60px);
+    overflow-y: auto;
+    padding: 8px;
+  }
+  body.mobile-mode #portfolio-grid {
+    height: auto;
+    max-height: 600px;
+  }
+  .pf-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+    gap: 8px;
+  }
+  .pf-card {
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 7px 9px 6px;
+    background: #fff;
+  }
+  .pf-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .pf-symbol { font-weight: bold; font-size: 13px; color: #222; }
+  .pf-name { font-size: 10px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; margin-bottom: 2px; }
+  .pf-price { font-size: 13px; font-weight: bold; }
+  .pf-chart-title { font-size: 10px; color: #666; margin-bottom: 2px; }
+  .pf-chart-area {
+    width: 100%;
+    height: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f9f9f9;
+    border-radius: 3px;
+  }
   </style>
 </head>
 <body>
@@ -3013,20 +3139,54 @@ HTML_TEMPLATE = """
   <div class="row main-row">
   <div class="col-lg-8">
     <div class="heatmap-header">
-      <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-dark active" onclick="setMarket(this, 'twse', 'INDEX')">上市指數</button>
-        <button class="btn btn-outline-dark" onclick="setMarket(this, 'twse', 'EQUITY')">上市個股</button>
-        <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
-        <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
-        <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
-        <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button>
+      <div class="heatmap-header-row">
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-dark active" onclick="setMarket(this, 'twse', 'INDEX')">上市指數</button>
+          <button class="btn btn-outline-dark" onclick="setMarket(this, 'twse', 'EQUITY')">上市個股</button>
+          <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
+          <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
+          <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
+          <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button>
+          <button class="btn btn-outline-secondary" onclick="showPortfolioView(this)">Portfolio Realtime</button>
+        </div>
+        <div id="area-metric-selector" style="font-size:14px;">
+          <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
+          <label class="ms-2" style="cursor:pointer"><input type="radio" name="area_metric" value="marketValueWeight" onchange="updateHeatmap()"> 市值</label>
+        </div>
       </div>
-      <div style="font-size:14px;">
-        <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
-        <label class="ms-2" style="cursor:pointer"><input type="radio" name="area_metric" value="marketValueWeight" onchange="updateHeatmap()"> 市值</label>
+      <div class="heatmap-header-row interval-bar">
+        <span>更新間隔：</span>
+        <label>Heatmap
+          <select id="interval-heatmap" onchange="restartHeatmapInterval()">
+            <option value="30000">30s</option>
+            <option value="60000">1m</option>
+            <option value="120000">2m</option>
+            <option value="300000" selected>5m</option>
+            <option value="600000">10m</option>
+          </select>
+        </label>
+        <label>Portfolio
+          <select id="interval-portfolio" onchange="restartPortfolioInterval()">
+            <option value="30000">30s</option>
+            <option value="60000">1m</option>
+            <option value="120000">2m</option>
+            <option value="300000" selected>5m</option>
+            <option value="600000">10m</option>
+          </select>
+        </label>
+        <label>Monitor
+          <select id="interval-monitor" onchange="restartMonitorInterval()">
+            <option value="30000">30s</option>
+            <option value="60000">1m</option>
+            <option value="120000" selected>2m</option>
+            <option value="300000">5m</option>
+            <option value="600000">10m</option>
+          </select>
+        </label>
       </div>
     </div>
     <div id="chart-container"></div>
+    <div id="portfolio-grid"></div>
   </div>
 
   <div class="col-lg-4">
@@ -3075,6 +3235,8 @@ HTML_TEMPLATE = """
 let chartInstance = null;
 let currentMarket = 'twse';
 let currentType = 'INDEX';
+let heatmapInterval = null;
+let monitorInterval = null;
 
 function fmtNum(n) { if(n === undefined) return '0'; return n.toLocaleString('en-US'); }
 function fmtFloat(n, d=2) { if(n === undefined) return '0.00'; return n.toFixed(d); }
@@ -3083,6 +3245,7 @@ function fmtFloat(n, d=2) { if(n === undefined) return '0.00'; return n.toFixed(
 
 
 function setMarket(btn, market, type) {
+  hidePortfolioView();
   document.querySelectorAll('.btn-group button').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   currentMarket = market;
@@ -3090,59 +3253,160 @@ function setMarket(btn, market, type) {
   updateHeatmap();
 }
 
+let portfolioInterval = null;
+
+function restartHeatmapInterval() {
+  clearInterval(heatmapInterval);
+  const ms = parseInt(document.getElementById('interval-heatmap').value);
+  heatmapInterval = setInterval(conditionalUpdateHeatmap, ms);
+}
+
+function restartPortfolioInterval() {
+  clearInterval(portfolioInterval);
+  if (document.getElementById('portfolio-grid').style.display !== 'none' &&
+      document.getElementById('portfolio-grid').style.display !== '') {
+    const ms = parseInt(document.getElementById('interval-portfolio').value);
+    portfolioInterval = setInterval(loadPortfolioSparklines, ms);
+  }
+}
+
+function restartMonitorInterval() {
+  clearInterval(monitorInterval);
+  const ms = parseInt(document.getElementById('interval-monitor').value);
+  monitorInterval = setInterval(updateNotify, ms);
+}
+
+function showPortfolioView(btn) {
+  document.querySelectorAll('.btn-group button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('chart-container').style.display = 'none';
+  document.getElementById('area-metric-selector').style.display = 'none';
+  document.getElementById('portfolio-grid').style.display = 'block';
+  loadPortfolioSparklines();
+  clearInterval(portfolioInterval);
+  const ms = parseInt(document.getElementById('interval-portfolio').value);
+  portfolioInterval = setInterval(loadPortfolioSparklines, ms);
+}
+
+function hidePortfolioView() {
+  clearInterval(portfolioInterval);
+  portfolioInterval = null;
+  document.getElementById('chart-container').style.display = '';
+  document.getElementById('area-metric-selector').style.display = '';
+  document.getElementById('portfolio-grid').style.display = 'none';
+}
+
+async function loadPortfolioSparklines() {
+  const grid = document.getElementById('portfolio-grid');
+  grid.innerHTML = '<div class="text-center text-muted p-3">Loading...</div>';
+
+  try {
+    // 1. 取得 monitor 資料 (含 symbol/name/price/change)
+    const monitorRes = await fetch('/api/monitor');
+    const monitorData = await monitorRes.json();
+    const rows = (monitorData.rows || []).sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+    if (rows.length === 0) {
+      grid.innerHTML = '<div class="text-center text-muted p-3">No portfolio data</div>';
+      return;
+    }
+
+    // 2. 分批抓 sparkline (每批最多 15 個)
+    const symbols = rows.map(r => r.symbol);
+    const BATCH_SIZE = 15;
+    const chunks = [];
+    for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+      chunks.push(symbols.slice(i, i + BATCH_SIZE));
+    }
+
+    const chartMap = {};
+    for (const chunk of chunks) {
+      const res = await fetch(`/api/sparkline_multi?symbols=${chunk.join(',')}`);
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : (json.data || []);
+      list.forEach(item => {
+        const chart = item.chart;
+        if (chart && chart.meta && chart.meta.symbol) {
+          chartMap[chart.meta.symbol] = chart;
+        }
+      });
+    }
+
+    // 3. 渲染卡片
+    let html = '<div class="pf-grid">';
+    rows.forEach(row => {
+      const safeId = 'pf_' + row.symbol.replace(/[^a-zA-Z0-9]/g, '_');
+      let changeVal = parseFloat(row.change.replace('%', ''));
+      const colorStyle = changeVal >= 0 ? 'color:#ff3333;' : 'color:#00cc44;';
+      html += `
+        <div class="pf-card">
+          <div class="pf-card-header">
+            <span class="pf-symbol">${row.symbol.split('.')[0]}</span>
+            <span class="pf-price" style="${colorStyle}">${row.price}</span>
+          </div>
+          <div class="pf-name">${row.name}</div>
+          <div id="${safeId}_title" class="pf-chart-title">即時走勢</div>
+          <div id="${safeId}" class="pf-chart-area"><span style="color:#999;font-size:11px;">Loading...</span></div>
+        </div>`;
+    });
+    html += '</div>';
+    grid.innerHTML = html;
+
+    // 4. 逐一繪製 SVG
+    rows.forEach(row => {
+      const safeId = 'pf_' + row.symbol.replace(/[^a-zA-Z0-9]/g, '_');
+      const chartData = chartMap[row.symbol];
+      if (chartData) {
+        _drawSparklineSVG(safeId, chartData);
+      } else {
+        const el = document.getElementById(safeId);
+        if (el) el.innerHTML = '<span style="color:#999;font-size:11px;">N/A</span>';
+      }
+    });
+
+  } catch (err) {
+    console.error('Portfolio sparklines error:', err);
+    grid.innerHTML = `<div class="text-center text-danger p-3">Error: ${err.message}</div>`;
+  }
+}
+
 
 
 
 // === 1. 畫圖函式 (修正灰色昨收線樣式) ===
-async function renderSparklineSVG(containerId, symbol) {
-  const container = document.getElementById(containerId);
-  if (!container || container.getAttribute('data-loaded')) return;
 
-  const targetUrl = `https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;type=tick;symbols=["${symbol}"]`;
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+// Inner renderer: takes pre-fetched chartData object
+function _drawSparklineSVG(containerId, chartData) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
 
   try {
-    const response = await fetch(proxyUrl);
-    const json = await response.json();
-    const chartData = Array.isArray(json) ? json[0].chart : json.data?.[0]?.chart;
-    
-    if (!chartData) throw new Error("無圖表資料");
-
     const timestamps = chartData.timestamp;
     const closes = chartData.indicators.quote[0].close;
     const meta = chartData.meta;
-    
+
     const prevClose = meta.chartPreviousClose || meta.previousClose;
     const limitUp = meta.limitUpPrice;
     const limitDown = meta.limitDownPrice;
 
-    // === 【關鍵修改 1】設定 X 軸範圍 (交易時段) ===
-    // 嘗試從 tradingPeriods 取得當天的開盤(start)與收盤(end)時間
     let minT, maxT;
-    const period = meta.tradingPeriods?.[0]?.[0]; // 安全存取
-
+    const period = meta.tradingPeriods?.[0]?.[0];
     if (period && period.start && period.end) {
-      // 如果有定義交易時段，X 軸就固定死這個範圍
       minT = period.start;
       maxT = period.end;
     } else {
-      // 如果沒有 (例如某些指數)，就退回使用資料的第一筆跟最後一筆
       if (timestamps && timestamps.length > 0) {
         minT = timestamps[0];
         maxT = timestamps[timestamps.length - 1];
       } else {
-        // 完全沒資料也沒時段，給個預設值避免報錯
-        minT = 0; maxT = 1; 
+        minT = 0; maxT = 1;
       }
     }
 
-    // 1. 整理數據點
     const points = [];
     for (let i = 0; i < timestamps.length; i++) {
       const t = timestamps[i];
       const p = closes[i];
-      
-      // 【優化】只收錄在交易時段內的點，避免盤前盤後數據導致線畫到格子外面
       if (p !== null && p !== undefined && t >= minT && t <= maxT) {
         points.push({ t: t, p: p });
       }
@@ -3153,16 +3417,13 @@ async function renderSparklineSVG(containerId, symbol) {
       return;
     }
 
-    // 2. 計算 Y 軸範圍 (價格)
     let minP, maxP;
     const hasLimitPrice = (limitUp && limitUp !== '-' && limitDown && limitDown !== '-');
-
     if (hasLimitPrice) {
       maxP = parseFloat(limitUp);
       minP = parseFloat(limitDown);
     } else {
-      minP = points[0].p;
-      maxP = points[0].p;
+      minP = points[0].p; maxP = points[0].p;
       points.forEach(pt => {
         if (pt.p < minP) minP = pt.p;
         if (pt.p > maxP) maxP = pt.p;
@@ -3171,51 +3432,48 @@ async function renderSparklineSVG(containerId, symbol) {
         if (prevClose < minP) minP = prevClose;
         if (prevClose > maxP) maxP = prevClose;
       }
-      if (maxP === minP) {
-        maxP *= 1.01;
-        minP *= 0.99;
-      }
+      if (maxP === minP) { maxP *= 1.01; minP *= 0.99; }
     }
 
-    // 3. 設定畫布尺寸與轉換公式
-    const width = 300; 
-    const height = 110; 
-    const padding = 5; 
-
-    // 【關鍵修改 2】getX 的公式不變，但是傳入的 minT / maxT 已經變成固定的「開盤~收盤」時間了
+    const width = 300;
+    const height = 110;
+    const padding = 5;
     const getX = (t) => ((t - minT) / (maxT - minT)) * width;
     const getY = (p) => height - padding - ((p - minP) / (maxP - minP)) * (height - 2 * padding);
 
-    // 產生走勢圖路徑
-    const svgPoints = points.map(pt => {
-      return `${getX(pt.t).toFixed(1)},${getY(pt.p).toFixed(1)}`;
-    }).join(" ");
+    const svgPoints = points.map(pt => `${getX(pt.t).toFixed(1)},${getY(pt.p).toFixed(1)}`).join(" ");
 
-    // 計算昨收線 (實線)
     let prevCloseLine = "";
     if (prevClose && prevClose >= minP && prevClose <= maxP) {
       const yPrev = getY(prevClose).toFixed(1);
       prevCloseLine = `<line x1="0" y1="${yPrev}" x2="${width}" y2="${yPrev}" stroke="#999" stroke-width="0.8" opacity="0.6" />`;
     }
 
-    // 決定顏色
     const lastPrice = points[points.length - 1].p;
-    const refPrice = prevClose || points[0].p; 
+    const refPrice = prevClose || points[0].p;
     const color = lastPrice >= refPrice ? "#ff3333" : "#00cc44";
 
-    // 4. 輸出 SVG
+    const precision = lastPrice < 1 ? 4 : 2;
+    const chgPct = refPrice ? ((lastPrice - refPrice) / refPrice * 100) : 0;
+    const chgSign = chgPct >= 0 ? '+' : '';
+    const prevCloseStr = prevClose ? prevClose.toFixed(precision) : 'N/A';
+    const titleEl = document.getElementById(containerId + '_title');
+    if (titleEl) {
+      const infoSpan = `<span style="font-weight:normal; color:${color};">&nbsp;(現 ${lastPrice.toFixed(precision)} / 昨 ${prevCloseStr} / ${chgSign}${chgPct.toFixed(2)}%)</span>`;
+      titleEl.innerHTML = titleEl.textContent.trim() + infoSpan;
+    }
+
     container.innerHTML = `
       <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="width:100%; height:100%; background:transparent;">
         ${prevCloseLine}
-        <polyline points="${svgPoints}" 
-              fill="none" 
-              stroke="${color}" 
-              stroke-width="2" 
+        <polyline points="${svgPoints}"
+              fill="none"
+              stroke="${color}"
+              stroke-width="2"
               stroke-linejoin="round"
-              vector-effect="non-scaling-stroke" /> 
+              vector-effect="non-scaling-stroke" />
       </svg>
     `;
-
     container.setAttribute('data-loaded', 'true');
     container.style.background = 'transparent';
     container.style.border = 'none';
@@ -3223,6 +3481,26 @@ async function renderSparklineSVG(containerId, symbol) {
   } catch (err) {
     console.error("Chart Error:", err);
     container.innerHTML = '<span style="color:#ccc;font-size:12px;">N/A</span>';
+  }
+}
+
+async function renderSparklineSVG(containerId, symbol) {
+  const container = document.getElementById(containerId);
+  if (!container || container.getAttribute('data-loaded')) return;
+
+  const proxyUrl = `/api/sparkline/${encodeURIComponent(symbol)}`;
+
+  try {
+    const response = await fetch(proxyUrl);
+    const json = await response.json();
+    const chartData = Array.isArray(json) ? json[0].chart : json.data?.[0]?.chart;
+
+    if (!chartData) throw new Error("無圖表資料");
+    _drawSparklineSVG(containerId, chartData);
+
+  } catch (err) {
+    console.error("Chart Error:", err);
+    if (container) container.innerHTML = '<span style="color:#ccc;font-size:12px;">N/A</span>';
   }
 }
 
@@ -3279,13 +3557,13 @@ function tooltipFormatter(info) {
     if (symbol) {
       rightContent = `
         <div style="flex: 1; display: flex; flex-direction: column;">
-           <div style="font-size:12px; color:#666; margin-bottom:4px; font-weight:bold;">即時走勢</div>
+           <div id="${chartId}_title" style="font-size:12px; color:#666; margin-bottom:4px; font-weight:bold;">即時走勢</div>
            <div id="${chartId}" style="width:100%; height:110px; display:flex; align-items:center; justify-content:center; background:#f9f9f9; border:1px solid #eee; border-radius:4px;">
             <span style="color:#999;font-size:12px;">Loading...</span>
            </div>
         </div>
       `;
-      setTimeout(() => renderSparklineSVG(chartId, symbol), 1000);
+      setTimeout(() => renderSparklineSVG(chartId, symbol), 100);
     }
 
     // 3. 下方大圖區
@@ -3327,7 +3605,7 @@ function labelFormatterIndex(params) {
   if (Array.isArray(params.value)) {
   var price = params.value[2] ? params.value[2].toFixed(2) : '0.00';
   var chg = params.value[1] ? params.value[1].toFixed(2) + '%' : '0.00%';
-  return params.name + '\\n' + price + ' | ' + chg;
+  return params.name + '\\n' + price + ' | ' + chg;f
   }
   return params.name;
 }
@@ -3354,9 +3632,9 @@ function isTwTradingHours() {
   // 轉換為台北時間 (UTC+8)
   const taipeiTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
       
-  const day = etTime.getDay(); // 0=週日, 6=週六
+  const day = taipeiTime.getDay(); // 0=週日, 6=週六
   if (day === 0 || day === 6) return false; // 週末不交易
-  
+
   const hours = taipeiTime.getHours();
   const minutes = taipeiTime.getMinutes();
   const currentTime = hours * 60 + minutes; // 轉換為分鐘
@@ -3596,21 +3874,33 @@ let isSoundEnabled = false;
 // [新增] 嘗試啟用音效 (解鎖瀏覽器限制)
 function tryEnableSound() {
   const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
-  audio.volume = 0; // 靜音播放，僅為了取得權限
-  
+  audio.volume = 0;
+
   audio.play().then(() => {
-    // 播放成功，代表已取得權限
     isSoundEnabled = true;
     const btn = document.getElementById('audio-btn');
-    if(btn) {
-        btn.innerText = "🔊";
-        btn.title = "音效已啟用 (點擊測試)";
-        btn.style.color = "#198754"; // 綠色
+    if (btn) {
+      btn.innerText = "🔊";
+      btn.title = "音效已啟用 (點擊關閉)";
+      btn.style.color = "#198754";
+      btn.onclick = disableSound;
     }
     console.log("[System] Audio Autoplay Unlocked!");
   }).catch(e => {
     console.warn("音效啟用失敗 (需使用者互動):", e);
   });
+}
+
+function disableSound() {
+  isSoundEnabled = false;
+  const btn = document.getElementById('audio-btn');
+  if (btn) {
+    btn.innerText = "🔇";
+    btn.title = "點擊以啟用音效";
+    btn.style.color = "";
+    btn.onclick = tryEnableSound;
+  }
+  console.log("[System] Audio Disabled.");
 }
 
 
@@ -3624,9 +3914,14 @@ function playAlertSound() {
   audio.play().then(() => {
     // 如果這次播放成功，順便更新 UI 狀態
     if (!isSoundEnabled) {
-        isSoundEnabled = true;
-        document.getElementById('audio-btn').innerText = "🔊";
-        document.getElementById('audio-btn').style.color = "#198754";
+      isSoundEnabled = true;
+      const btn = document.getElementById('audio-btn');
+      if (btn) {
+        btn.innerText = "🔊";
+        btn.title = "音效已啟用 (點擊關閉)";
+        btn.style.color = "#198754";
+        btn.onclick = disableSound;
+      }
     }
   }).catch(e => {
     console.warn("警示音被阻擋，請點擊頁面以啟用音效");
@@ -3883,9 +4178,9 @@ function handleStockHover(event) {
   // === 3. 設定位置與尺寸 (關鍵修改) ===
   popup.style.display = 'block';
   popup.style.position = 'fixed';
-  popup.style.left = '50%'; // 改為 50% 比較正中
+  popup.style.left = '5px';
   popup.style.top = '50%';
-  popup.style.transform = 'translate(-50%, -50%)';
+  popup.style.transform = 'translateY(-50%)';
   
   // 【關鍵修改】：不鎖死 width，改用 min-width
   // 這樣一開始有最小寬度，等圖片載入後，寬度會自動被圖片撐開
@@ -3900,7 +4195,7 @@ function handleStockHover(event) {
     <div style="display: flex; flex-direction: column; align-items: center;">
       
       <div style="width: 100%; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px;">
-        <div style="font-weight: bold; margin-bottom: 5px; font-size: 14px; text-align: left;">${symbol} 即時走勢</div>
+        <div id="${sparklineId}_title" style="font-weight: bold; margin-bottom: 5px; font-size: 14px; text-align: left;">${symbol} 即時走勢</div>
         <div id="${sparklineId}" style="width: 100%; height: 80px; display:flex; align-items:center; justify-content:center; background:#f9f9f9;">
           <span class="loading" style="font-size:12px; color:#999;">載入即時盤...</span>
         </div>
@@ -3918,7 +4213,7 @@ function handleStockHover(event) {
     if (typeof renderSparklineSVG === 'function') {
         renderSparklineSVG(sparklineId, symbol);
     }
-  }, 1000);
+  }, 100);
 
   // === 6. 載入圖片 (撐開寬度) ===
   const img = new Image();
@@ -3968,13 +4263,6 @@ function handleStockLeave(event) {
 
 
 window.addEventListener('resize', () => { if(chartInstance) chartInstance.resize(); });
-document.addEventListener('DOMContentLoaded', () => {
-  updateHeatmap();
-  updateNotify();
-  //setInterval(updateHeatmap, 300000);
-  setInterval(conditionalUpdateHeatmap, 300000);  // 每 5 分鐘檢查一次
-  setInterval(updateNotify, 120000);
-});
 
 
 
@@ -4024,8 +4312,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ... (原本的初始化代碼) ...
   updateHeatmap();
   updateNotify();
-  setInterval(conditionalUpdateHeatmap, 300000);
-  setInterval(updateNotify, 120000);
+  heatmapInterval = setInterval(conditionalUpdateHeatmap, 300000);
+  monitorInterval = setInterval(updateNotify, 120000);
 });
 </script>
 
@@ -4068,6 +4356,46 @@ def api_monitor():
   print("[DEBUG] API Request - Monitor Check")
   result = monitor.run_check()
   return jsonify(result)
+
+
+
+
+@app.route("/api/sparkline_multi")
+def api_sparkline_multi():
+  import json as _json
+  symbols_str = request.args.get('symbols', '')
+  if not symbols_str:
+    return jsonify({'error': 'No symbols'}), 400
+  symbols = [s.strip() for s in symbols_str.split(',') if s.strip()]
+  symbols_json = _json.dumps(symbols)
+  url = f'https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;type=tick;symbols={symbols_json}'
+  headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Referer': 'https://tw.stock.yahoo.com/',
+  }
+  try:
+    r = requests.get(url, headers=headers, timeout=10)
+    r.raise_for_status()
+    return Response(r.content, content_type='application/json')
+  except Exception as e:
+    return jsonify({'error': str(e)}), 502
+
+
+
+
+@app.route("/api/sparkline/<path:symbol>")
+def api_sparkline(symbol):
+  url = f'https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;type=tick;symbols=["{symbol}"]'
+  headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Referer': 'https://tw.stock.yahoo.com/',
+  }
+  try:
+    r = requests.get(url, headers=headers, timeout=5)
+    r.raise_for_status()
+    return Response(r.content, content_type='application/json')
+  except Exception as e:
+    return jsonify({'error': str(e)}), 502
 
 
 
