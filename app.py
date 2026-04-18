@@ -1314,7 +1314,10 @@ def build_chart_option(calls, puts, ticker, max_pain, underlying_price):
 
   # 計算選擇權賣方的總損失
   strikes = sorted(set(df_calls['strike']).union(set(df_puts['strike'])))
-  strike_labels = [str(s) for s in strikes]
+  # Normalize to consistent string format to ensure markLine xAxis matching
+  def fmt_strike(s):
+    return str(int(s)) if s == int(s) else str(s)
+  strike_labels = [fmt_strike(s) for s in strikes]
 
   call_losses = []
   put_losses = []
@@ -1346,10 +1349,10 @@ def build_chart_option(calls, puts, ticker, max_pain, underlying_price):
     "data": []
   }
 
-  # 保證轉成字串
+  # 保證轉成字串，且格式與 strike_labels 一致
   if max_pain is not None:
     mark_line["data"].append({
-      "xAxis": str(max_pain),
+      "xAxis": fmt_strike(max_pain),
       "name": "Max Pain",
       "lineStyle": {"color": "blue"}
     })
@@ -1358,7 +1361,7 @@ def build_chart_option(calls, puts, ticker, max_pain, underlying_price):
     # 找到離 underlying_price 最近的 strike（讓 x 軸可以對得上）
     closest_strike = min(strikes, key=lambda x: abs(x - underlying_price))
     mark_line["data"].append({
-      "xAxis": str(closest_strike),
+      "xAxis": fmt_strike(closest_strike),
       "name": "Underlying",
       "lineStyle": {"color": "orange"}
     })
@@ -1385,9 +1388,12 @@ def build_chart_option(calls, puts, ticker, max_pain, underlying_price):
     ]
   }
 
-  # chart2：未平倉合約數 (維持不變)
-  call_oi = [int(df_calls.set_index('strike').openInterest.get(s, 0)) for s in strikes]
-  put_oi = [-int(df_puts.set_index('strike').openInterest.get(s, 0)) for s in strikes]
+  # chart2：未平倉合約數
+  # Use groupby to safely handle duplicate strikes (returns scalar, not Series)
+  call_oi_map = df_calls.groupby('strike')['openInterest'].sum()
+  put_oi_map  = df_puts.groupby('strike')['openInterest'].sum()
+  call_oi = [int(call_oi_map.get(s, 0)) for s in strikes]
+  put_oi  = [-int(put_oi_map.get(s, 0)) for s in strikes]
 
   chart2 = {
     "tooltip": {"trigger": "axis"},
