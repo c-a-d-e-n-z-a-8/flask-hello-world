@@ -1753,7 +1753,7 @@ def init_sp500_sectors():
     traceback.print_exc()
 '''
 def init_sp500_sectors():
-  """初始化 S&P 500 的 GICS Sector 對應表"""
+  """初始化 S&P 500 的 GICS Sector 對應表（從 Wikipedia 抓取）"""
   global GICS_SECTOR_CACHE
 
   if GICS_SECTOR_CACHE:
@@ -1762,61 +1762,40 @@ def init_sp500_sectors():
 
   try:
     print("[DEBUG] Fetching S&P 500 GICS Sectors from Wikipedia...")
-    
     r = requests.get(SP500_WIKI_URL, impersonate="chrome120", timeout=15)
-    print(f"[DEBUG] Wikipedia Response: {r.status_code}")
-    
+    print(f"[DEBUG] Wikipedia S&P 500 Response: {r.status_code}")
+
     if r.status_code == 200:
-      # 修正 2: 針對 HTML ID="constituents" 抓取表格，確保不會抓到其他的 Infobox
-      # 修正 3: 使用 io.StringIO 避免 Pandas 未來版本的警告
-      df_list = pd.read_html(
-        r.text, 
-        attrs={'id': 'constituents'} 
-      )
-      
-      if df_list:
-        df = df_list[0]  # 因為指定了 id，這裡取出的第一個表格一定是正確的
-        
-        print(f"[DEBUG] Wikipedia Table Columns: {df.columns.tolist()}")
-        
-        # 建立 Symbol -> GICS Sector 的對應
-        count = 0
-        for _, row in df.iterrows():
-          try:
-            symbol = str(row.get('Symbol', '')).strip()
-            sector = str(row.get('GICS Sector', 'Unknown')).strip()
-            
-            # 額外處理: 維基百科的 GICS Sector 欄位有時會包含連結文字，Pandas 通常處理得很好，
-            # 但如果欄位名稱變更，這裡可以做防呆
-            if sector == 'Unknown':
-              # 嘗試找尋其他可能的欄位名稱 (有些版本叫 'GICS Sector', 有些包含 hidden text)
-              for col in df.columns:
-                if 'GICS Sector' in col:
-                  sector = str(row.get(col, 'Unknown')).strip()
-                  break
+      soup = BS(r.text, 'html.parser')
+      table = soup.find('table', {'id': 'constituents'})
+      if not table:
+        table = soup.find('table', class_='wikitable sortable')
 
-            if symbol and symbol != 'nan':
-              # 額外處理: Wikipedia 的 ticker 有時用 '.' (如 BRK.B)，有些 API 需要 '-' (如 BRK-B)
-              # 視你的下游需求決定是否要 replace('.', '-')
-              GICS_SECTOR_CACHE[symbol] = sector
-              count += 1
-              
-          except Exception:
-            continue
-        
+      if table:
+        tbody = table.find('tbody')
+        if tbody:
+          rows = tbody.find_all('tr')
+          for row in rows:
+            cols = row.find_all('td')
+            if len(cols) >= 4:
+              try:
+                symbol = cols[0].text.strip()
+                sector = cols[3].text.strip()
+                sector = ' '.join(sector.split())
+                if symbol:
+                  GICS_SECTOR_CACHE[symbol] = sector
+              except Exception:
+                continue
+
         print(f"[DEBUG] GICS Sectors loaded: {len(GICS_SECTOR_CACHE)} symbols")
-        
-        # 驗證前 5 個
         print("[DEBUG] First 5 entries:")
-        for i, (k, v) in enumerate(list(GICS_SECTOR_CACHE.items())[:5]):
+        for k, v in list(GICS_SECTOR_CACHE.items())[:5]:
           print(f"  {k}: {v}")
-
       else:
-        print("[WARN] Specific table (id='constituents') not found.")
-        
+        print("[WARN] S&P 500 table not found in Wikipedia page")
     else:
-      print(f"[WARN] Wikipedia fetch failed: {r.status_code}")
-          
+      print(f"[WARN] Wikipedia S&P 500 fetch failed: {r.status_code}")
+
   except Exception as e:
     print(f"[ERROR] Failed to load GICS Sectors: {e}")
     traceback.print_exc()
