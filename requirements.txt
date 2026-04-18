@@ -6,5 +6,5 @@ google-generativeai
 Gunicorn
 pyecharts
 beautifulsoup4
-curl_cffi
+curl_cffi==0.15.0
 lxml
