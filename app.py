@@ -1763,12 +1763,7 @@ def init_sp500_sectors():
   try:
     print("[DEBUG] Fetching S&P 500 GICS Sectors from Wikipedia...")
     
-    # 修正 1: 設定 User-Agent 以避免被 Wikipedia 擋擋 (使用標準 requests)
-    headers = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    
-    r = requests.get(SP500_WIKI_URL, headers=headers, timeout=15)
+    r = requests.get(SP500_WIKI_URL, impersonate="chrome120", timeout=15)
     print(f"[DEBUG] Wikipedia Response: {r.status_code}")
     
     if r.status_code == 200:
