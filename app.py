@@ -346,7 +346,7 @@ def fetch_stock_data(ticker):
   quarterly_cashflow = stock.quarterly_cashflow.to_dict()
   #info = stock.info
   info = dict(dropwhile(lambda item: item[0] != 'previousClose', stock.info.items()))
-  #print(info)
+  print(info)
   
   upgrades_downgrades = stock.upgrades_downgrades[:10].to_dict()
   eps_trend = stock.eps_trend.to_dict()
@@ -1947,23 +1947,24 @@ def industry_label_ndx(symbol: str) -> str:
 
 
 
+'''
 def fetch_heatmap_data():
   now = time.time()
   if (DATA_CACHE["twse"] is None) or (now - DATA_CACHE["last_update"] > CACHE_DURATION):
     try:
-      print(f"[{time.ctime()}] [DEBUG] Starting Heatmap Update...") 
-      
+      print(f"[{time.ctime()}] [DEBUG] Starting Heatmap Update...")
+
       # === 台股資料 (原有邏輯) ===
       r_twse = requests.get(TWSE_URL, headers=HEADERS_FUGLE, timeout=15)
       r_otc = requests.get(OTC_URL, headers=HEADERS_FUGLE, timeout=15)
-      
+
       print(f"[DEBUG] Fugle Response - TWSE: {r_twse.status_code}, OTC: {r_otc.status_code}")
 
       if r_twse.status_code == 200:
         data_twse = r_twse.json().get("data", [])
         DATA_CACHE["twse"] = pd.DataFrame(data_twse)
         print(f"[DEBUG] TWSE Data loaded: {len(data_twse)} rows")
-      
+
       if r_otc.status_code == 200:
         data_otc = r_otc.json().get("data", [])
         DATA_CACHE["otc"] = pd.DataFrame(data_otc)
@@ -1974,72 +1975,72 @@ def fetch_heatmap_data():
       try:
         # 使用 curl_cffi 的 impersonate 參數
         r_sp500 = requests.get(
-          SP500_DATA_URL, 
+          SP500_DATA_URL,
           impersonate="chrome120",
           timeout=15
         )
-        
+
         print(f"[DEBUG] SlickCharts Response: {r_sp500.status_code}")
-        
+
         if r_sp500.status_code == 200:
           soup = BS(r_sp500.text, 'html.parser')
-          
+
           # 找到 <div class="col-lg-7"> 內的表格
           target_div = soup.find('div', class_='col-lg-7')
-          
+
           if target_div:
             table = target_div.find('table')
-            
+
             if table:
               # 解析表格
               rows = []
               tbody = table.find('tbody')
-              
+
               if tbody:
                 for idx, tr in enumerate(tbody.find_all('tr')):
                   cols = tr.find_all('td')
-                  
+
                   if len(cols) >= 7:
                     try:
                       # SlickCharts 表格結構:
-                      # 0: #(Rank), 1: Company, 2: Symbol, 3: Weight, 
+                      # 0: #(Rank), 1: Company, 2: Symbol, 3: Weight,
                       # 4: Price, 5: Chg, 6: % Chg
-                      
+
                       company = cols[1].text.strip()
                       symbol = cols[2].text.strip()
                       weight_raw = cols[3].text.strip()
                       price_raw = cols[4].text.strip()
                       change_raw = cols[5].text.strip()
                       pct_change_raw = cols[6].text.strip()
-                      
+
                       # === [關鍵修正] 正負號判斷邏輯 ===
-                      
+
                       # Weight 處理
                       weight_str = weight_raw.replace('%', '').strip()
                       weight = float(weight_str)
-                      
+
                       # Price 處理
                       price_str = price_raw.replace('$', '').replace(',', '').strip()
                       price = float(price_str)
-                      
+
                       # Change 處理：保留原始正負號
                       change_str = change_raw.replace('$', '').replace(',', '').strip()
                       change = float(change_str)  # 直接轉換，保留 +/- 號
-                      
+
                       # % Change 處理：移除括號和百分比符號，但保留原始正負號
                       # 從 Chg 欄位判斷正負（因為 % Chg 的括號不代表負數）
                       pct_change_str = pct_change_raw.replace('(', '').replace(')', '').replace('%', '').strip()
                       pct_change = float(pct_change_str)
-                      
+
                       # [重要] 根據 Chg 的正負來決定 % Chg 的正負
                       if change < 0:
                         pct_change = -abs(pct_change)
                       else:
                         pct_change = abs(pct_change)
-                      
+
                       # 取得 GICS Sector
                       sector = industry_label_us(symbol)
-                      
+
                       rows.append({
                         "symbol": symbol,
                         "name": company,
@@ -2050,16 +2051,16 @@ def fetch_heatmap_data():
                         "industry": sector,
                         "type": "EQUITY"
                       })
-                      
+
                       # 調試：打印前 3 筆
                       if idx < 3:
                         print(f"[DEBUG] {symbol}: Change={change}, %Chg={pct_change}, Weight={weight}")
-                      
+
                     except (ValueError, IndexError, AttributeError) as e:
                       print(f"[WARN] Parsing row {idx} error: {e}")
                       print(f"[WARN] Raw cols: {[c.text.strip() for c in cols[:7]]}")
                       continue
-              
+
               if rows:
                 DATA_CACHE["sp500"] = pd.DataFrame(rows)
                 print(f"[DEBUG] S&P 500 Data loaded: {len(rows)} rows")
@@ -2071,7 +2072,7 @@ def fetch_heatmap_data():
             print("[WARN] <div class='col-lg-7'> not found")
         else:
           print(f"[WARN] SlickCharts fetch failed: {r_sp500.status_code}")
-          
+
       except Exception as e:
         print(f"[ERROR] SlickCharts fetch error: {e}")
         traceback.print_exc()
@@ -2080,24 +2081,24 @@ def fetch_heatmap_data():
       print("[DEBUG] Fetching Nasdaq 100 data from SlickCharts...")
       try:
         r_ndx = requests.get(NDX_DATA_URL, impersonate="chrome120", timeout=15)
-        
+
         print(f"[DEBUG] SlickCharts Nasdaq 100 Response: {r_ndx.status_code}")
-        
+
         if r_ndx.status_code == 200:
           soup = BS(r_ndx.text, 'html.parser')
           target_div = soup.find('div', class_='col-lg-7')
-          
+
           if target_div:
             table = target_div.find('table')
-            
+
             if table:
               rows = []
               tbody = table.find('tbody')
-              
+
               if tbody:
                 for idx, tr in enumerate(tbody.find_all('tr')):
                   cols = tr.find_all('td')
-                  
+
                   if len(cols) >= 7:
                     try:
                       # SlickCharts Nasdaq 100 表格結構與 S&P 500 相同
@@ -2107,27 +2108,27 @@ def fetch_heatmap_data():
                       price_raw = cols[4].text.strip()
                       change_raw = cols[5].text.strip()
                       pct_change_raw = cols[6].text.strip()
-                      
+
                       weight_str = weight_raw.replace('%', '').strip()
                       weight = float(weight_str)
-                      
+
                       price_str = price_raw.replace('$', '').replace(',', '').strip()
                       price = float(price_str)
-                      
+
                       change_str = change_raw.replace('$', '').replace(',', '').strip()
                       change = float(change_str)
-                      
+
                       pct_change_str = pct_change_raw.replace('(', '').replace(')', '').replace('%', '').strip()
                       pct_change = float(pct_change_str)
-                      
+
                       if change < 0:
                         pct_change = -abs(pct_change)
                       else:
                         pct_change = abs(pct_change)
-                      
+
                       # 使用 Nasdaq 100 專用的分類函數
                       subsector = industry_label_ndx(symbol)
-                      
+
                       rows.append({
                         "symbol": symbol,
                         "name": company,
@@ -2138,14 +2139,14 @@ def fetch_heatmap_data():
                         "industry": subsector,
                         "type": "EQUITY"
                       })
-                      
+
                       if idx < 3:
                         print(f"[DEBUG] NDX {symbol}: Change={change}, %Chg={pct_change}, Weight={weight}, Subsector={subsector}")
-                      
+
                     except (ValueError, IndexError, AttributeError) as e:
                       print(f"[WARN] Nasdaq 100 Parsing row {idx} error: {e}")
                       continue
-              
+
               if rows:
                 DATA_CACHE["ndx"] = pd.DataFrame(rows)
                 print(f"[DEBUG] Nasdaq 100 Data loaded: {len(rows)} rows")
@@ -2157,7 +2158,7 @@ def fetch_heatmap_data():
             print("[WARN] Nasdaq 100 <div class='col-lg-7'> not found")
         else:
           print(f"[WARN] SlickCharts Nasdaq 100 fetch failed: {r_ndx.status_code}")
-          
+
       except Exception as e:
         print(f"[ERROR] SlickCharts Nasdaq 100 fetch error: {e}")
         traceback.print_exc()
@@ -2169,8 +2170,174 @@ def fetch_heatmap_data():
     except Exception as e:
       print(f"[ERROR] Fetching heatmap data failed: {e}")
       traceback.print_exc()
+'''
 
 
+def fetch_us_yahoo_quotes(symbols):
+  """Batch fetch quotes from Yahoo Finance API. Uses session + crumb for auth."""
+  if not symbols:
+    return {}
+  result = {}
+  try:
+    session = requests.Session(impersonate="chrome120")
+    # Step 1: visit Yahoo Finance to get session cookie
+    session.get("https://finance.yahoo.com", timeout=10)
+    # Step 2: get crumb token
+    crumb_r = session.get("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=10)
+    crumb = crumb_r.text.strip()
+    if not crumb or "<" in crumb:
+      print(f"[WARN] Yahoo Finance crumb fetch failed: {crumb_r.status_code} {crumb[:80]}")
+      return {}
+    print(f"[DEBUG] Yahoo Finance crumb: {crumb}")
+  except Exception as e:
+    print(f"[ERROR] fetch_us_yahoo_quotes session/crumb error: {e}")
+    return {}
+
+  BATCH = 200
+  for i in range(0, len(symbols), BATCH):
+    batch = symbols[i:i+BATCH]
+    try:
+      url = "https://query2.finance.yahoo.com/v7/finance/quote"
+      params = {
+        "symbols": ",".join(batch),
+        "fields": "regularMarketPrice,regularMarketChangePercent,regularMarketChange,marketCap,shortName,regularMarketVolume,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow",
+        "crumb": crumb,
+      }
+      r = session.get(url, params=params, timeout=15)
+      if r.status_code == 200:
+        data = r.json()
+        for quote in data.get("quoteResponse", {}).get("result", []):
+          sym = quote.get("symbol")
+          if sym:
+            result[sym] = quote
+      else:
+        print(f"[WARN] Yahoo Finance quote batch {i//BATCH+1} failed: {r.status_code} {r.text[:200]}")
+    except Exception as e:
+      print(f"[ERROR] fetch_us_yahoo_quotes batch {i//BATCH+1} error: {e}")
+  print(f"[DEBUG] fetch_us_yahoo_quotes: got {len(result)} quotes for {len(symbols)} symbols")
+  return result
+
+
+def fetch_heatmap_data():
+  now = time.time()
+  if (DATA_CACHE["twse"] is None) or (now - DATA_CACHE["last_update"] > CACHE_DURATION):
+    try:
+      print(f"[{time.ctime()}] [DEBUG] Starting Heatmap Update...")
+
+      # === 台股資料 (原有邏輯，不變) ===
+      r_twse = requests.get(TWSE_URL, headers=HEADERS_FUGLE, timeout=15)
+      r_otc = requests.get(OTC_URL, headers=HEADERS_FUGLE, timeout=15)
+
+      print(f"[DEBUG] Fugle Response - TWSE: {r_twse.status_code}, OTC: {r_otc.status_code}")
+
+      if r_twse.status_code == 200:
+        data_twse = r_twse.json().get("data", [])
+        DATA_CACHE["twse"] = pd.DataFrame(data_twse)
+        print(f"[DEBUG] TWSE Data loaded: {len(data_twse)} rows")
+
+      if r_otc.status_code == 200:
+        data_otc = r_otc.json().get("data", [])
+        DATA_CACHE["otc"] = pd.DataFrame(data_otc)
+        print(f"[DEBUG] OTC Data loaded: {len(data_otc)} rows")
+
+      # === S&P 500 資料 (via Yahoo Finance quote API) ===
+      print("[DEBUG] Fetching S&P 500 data from Yahoo Finance...")
+      try:
+        if not GICS_SECTOR_CACHE:
+          init_sp500_sectors()
+        sp500_symbols = list(GICS_SECTOR_CACHE.keys())
+        if sp500_symbols:
+          quotes = fetch_us_yahoo_quotes(sp500_symbols)
+          total_mc = sum((q.get("marketCap") or 0) for q in quotes.values())
+          total_tv = sum(((q.get("regularMarketVolume") or 0) * (q.get("regularMarketPrice") or 0)) for q in quotes.values())
+          rows = []
+          for sym in sp500_symbols:
+            q = quotes.get(sym)
+            if not q:
+              continue
+            mc = q.get("marketCap") or 0
+            price = q.get("regularMarketPrice") or 0
+            vol = q.get("regularMarketVolume") or 0
+            tv = price * vol
+            rows.append({
+              "symbol": sym,
+              "name": q.get("shortName", sym),
+              "closePrice": price,
+              "openPrice": q.get("regularMarketOpen") or price,
+              "highPrice": q.get("regularMarketDayHigh") or price,
+              "lowPrice": q.get("regularMarketDayLow") or price,
+              "tradeVolume": vol,
+              "tradeValue": tv,
+              "change": q.get("regularMarketChange") or 0,
+              "changePercent": q.get("regularMarketChangePercent") or 0,
+              "marketCapWeight": (mc / total_mc * 100) if total_mc > 0 else 0,
+              "tradeValueWeight": (tv / total_tv * 100) if total_tv > 0 else 0,
+              "industry": industry_label_us(sym),
+              "type": "EQUITY"
+            })
+          if rows:
+            DATA_CACHE["sp500"] = pd.DataFrame(rows)
+            print(f"[DEBUG] S&P 500 Data loaded: {len(rows)} rows")
+          else:
+            print("[WARN] No S&P 500 data returned from Yahoo Finance")
+        else:
+          print("[WARN] GICS_SECTOR_CACHE empty, skipping S&P 500")
+      except Exception as e:
+        print(f"[ERROR] S&P 500 Yahoo Finance fetch error: {e}")
+        traceback.print_exc()
+
+      # === Nasdaq 100 資料 (via Yahoo Finance quote API) ===
+      print("[DEBUG] Fetching Nasdaq 100 data from Yahoo Finance...")
+      try:
+        if not NDX_SUBSECTOR_CACHE:
+          init_ndx_subsectors()
+        ndx_symbols = list(NDX_SUBSECTOR_CACHE.keys())
+        if ndx_symbols:
+          quotes = fetch_us_yahoo_quotes(ndx_symbols)
+          total_mc = sum((q.get("marketCap") or 0) for q in quotes.values())
+          total_tv = sum(((q.get("regularMarketVolume") or 0) * (q.get("regularMarketPrice") or 0)) for q in quotes.values())
+          rows = []
+          for sym in ndx_symbols:
+            q = quotes.get(sym)
+            if not q:
+              continue
+            mc = q.get("marketCap") or 0
+            price = q.get("regularMarketPrice") or 0
+            vol = q.get("regularMarketVolume") or 0
+            tv = price * vol
+            rows.append({
+              "symbol": sym,
+              "name": q.get("shortName", sym),
+              "closePrice": price,
+              "openPrice": q.get("regularMarketOpen") or price,
+              "highPrice": q.get("regularMarketDayHigh") or price,
+              "lowPrice": q.get("regularMarketDayLow") or price,
+              "tradeVolume": vol,
+              "tradeValue": tv,
+              "change": q.get("regularMarketChange") or 0,
+              "changePercent": q.get("regularMarketChangePercent") or 0,
+              "marketCapWeight": (mc / total_mc * 100) if total_mc > 0 else 0,
+              "tradeValueWeight": (tv / total_tv * 100) if total_tv > 0 else 0,
+              "industry": industry_label_ndx(sym),
+              "type": "EQUITY"
+            })
+          if rows:
+            DATA_CACHE["ndx"] = pd.DataFrame(rows)
+            print(f"[DEBUG] Nasdaq 100 Data loaded: {len(rows)} rows")
+          else:
+            print("[WARN] No NDX data returned from Yahoo Finance")
+        else:
+          print("[WARN] NDX_SUBSECTOR_CACHE empty, skipping Nasdaq 100")
+      except Exception as e:
+        print(f"[ERROR] NDX Yahoo Finance fetch error: {e}")
+        traceback.print_exc()
+
+      DATA_CACHE["last_update"] = now
+      print(f"[{time.ctime()}] [DEBUG] Heatmap Cache Updated.")
+
+    except Exception as e:
+      print(f"[ERROR] Fetching heatmap data failed: {e}")
+      traceback.print_exc()
 
 
 def get_clean_dataframe(market):
@@ -2205,11 +2372,10 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
     return []
 
   # === 判斷是否為美股市場 (S&P 500 或 Nasdaq 100) ===
-  is_us_market = "weight" in data.columns
-  
+  is_us_market = "marketCapWeight" in data.columns
+
   if is_us_market:
-    # S&P 500 使用 Weight 作為面積依據
-    size_col = "weight"
+    size_col = "marketCapWeight" if area_metric == "marketValueWeight" else "tradeValueWeight"
   else:
     # 台股邏輯 (維持不變)
     size_col = "tradeValue"
@@ -2225,13 +2391,12 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
   data["chg_pct"] = pd.to_numeric(data.get("changePercent"), errors="coerce").fillna(0)
   data["price"] = pd.to_numeric(data.get("closePrice"), errors="coerce").fillna(0)
   
-  # === [修改] S&P 500 沒有 Open/High/Low，給預設值 ===
   if is_us_market:
-    data["open"] = data["price"]
-    data["high"] = data["price"]
-    data["low"] = data["price"]
-    data["vol"] = 0
-    data["val"] = 0
+    data["open"] = pd.to_numeric(data.get("openPrice"), errors="coerce").fillna(data["price"])
+    data["high"] = pd.to_numeric(data.get("highPrice"), errors="coerce").fillna(data["price"])
+    data["low"] = pd.to_numeric(data.get("lowPrice"), errors="coerce").fillna(data["price"])
+    data["vol"] = pd.to_numeric(data.get("tradeVolume"), errors="coerce").fillna(0)
+    data["val"] = pd.to_numeric(data.get("tradeValue"), errors="coerce").fillna(0)
   else:
     data["open"] = pd.to_numeric(data.get("openPrice"), errors="coerce").fillna(0)
     data["high"] = pd.to_numeric(data.get("highPrice"), errors="coerce").fillna(0)
@@ -4331,6 +4496,21 @@ def stockdashboard():
   return render_template_string(HTML_TEMPLATE)
 
 
+
+
+@app.route("/twheatmap/api/debug")
+def api_debug_cache():
+  fetch_heatmap_data()
+  return jsonify({
+    "GICS_SECTOR_CACHE_size": len(GICS_SECTOR_CACHE),
+    "GICS_sample": list(GICS_SECTOR_CACHE.items())[:3],
+    "NDX_SUBSECTOR_CACHE_size": len(NDX_SUBSECTOR_CACHE),
+    "NDX_sample": list(NDX_SUBSECTOR_CACHE.items())[:3],
+    "DATA_CACHE_sp500": None if DATA_CACHE.get("sp500") is None else len(DATA_CACHE["sp500"]),
+    "DATA_CACHE_ndx": None if DATA_CACHE.get("ndx") is None else len(DATA_CACHE["ndx"]),
+    "DATA_CACHE_twse": None if DATA_CACHE.get("twse") is None else len(DATA_CACHE["twse"]),
+    "last_update": DATA_CACHE.get("last_update"),
+  })
 
 
 @app.route("/twheatmap/api/data")
