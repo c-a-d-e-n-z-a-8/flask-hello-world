@@ -2447,6 +2447,10 @@ class StockMonitor:
       ["6706.TW", 157, 168]
     ]
     
+    # Initial PTT author list
+    self.author_list = []
+    
+    
     # Indices for portfolio list
     self.IDX_T = 0
     self.IDX_F = 1
@@ -2518,6 +2522,8 @@ class StockMonitor:
         json_git = r.json()
         self.portfolio = json_git["portfolio"]
         print(f"[DEBUG] Portfolio loaded from GitHub. Total items: {len(self.portfolio)}")
+        self.author_list = json_git["author"]
+        print(f"[DEBUG] Author List loaded from GitHub. Total items: {len(self.author_list)}")
       else:
         print(f"[WARN] GitHub Portfolio fetch failed: {r.status_code}")
     except Exception as e:
@@ -3011,7 +3017,8 @@ class StockMonitor:
     # 只有當計數器是 0 或 30 的倍數時，才真正去爬蟲
     if self.run_count % 30 == 0:
       print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Updating PTT News (Keywords/Authors)...")
-      self.news_cache = ticker_news + self.get_ptt_news(keywords) +  self.get_ptt_authors("Stock", PTT_AUTHORS)
+      #self.news_cache = ticker_news + self.get_ptt_news(keywords) +  self.get_ptt_authors("Stock", PTT_AUTHORS)
+      self.news_cache = ticker_news + self.get_ptt_news(keywords) +  self.get_ptt_authors("Stock", self.author_list)
       print(f"[DEBUG] Total News Found: {len(self.news_cache)}")
     
     self.run_count += 1
