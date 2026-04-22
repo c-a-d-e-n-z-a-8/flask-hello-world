@@ -620,7 +620,7 @@ csv table
       except Exception as e:
         error = f"分析過程發生錯誤: {e}"
 
-  return render_template('analysis.html', analysis=analysis, error=error, ticker=ticker, model=model_name, additional_prompt=additional_prompt)
+  return render_template('analysis.html', analysis=analysis, error=error, ticker=ticker, model=model_name)
 
 
 
