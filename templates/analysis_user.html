@@ -11,34 +11,42 @@
             background-color: #121212 !important;
             color: #f1f1f1;
         }
+
         .card, .card-body, .form-control, .form-select {
             background-color: #1e1e1e;
             color: #f1f1f1;
             border-color: #333;
         }
+
         .form-control::placeholder {
             color: #888;
         }
+
         .btn-primary {
             background-color: #3a78f2;
             border-color: #3a78f2;
         }
+
         .btn-primary:hover {
             background-color: #2f64c8;
             border-color: #2f64c8;
         }
+
         .card-header {
             background-color: #2a2a2a;
             border-bottom: 1px solid #333;
         }
+
         .alert-danger {
             background-color: #5c2a2a;
             color: #fff;
         }
+
         .markdown-body {
             background-color: #1e1e1e;
             color: #f1f1f1;
         }
+
         pre code {
             background-color: #2b2b2b;
             color: #ddd;
@@ -46,10 +54,13 @@
     </style>
 </head>
 <body class="bg-dark">
+
 <div class="container-fluid py-5">
     <div class="row">
         <div class="col-md-8 offset-md-2">
+
             <h2 class="mb-4 text-center">📈 Gemini Stock Analysis</h2>
+
             <form method="post" class="card p-4 shadow">
                 <div class="mb-3">
                     <label for="ticker" class="form-label">Input Yahoo-format stock ticker</label>
@@ -59,6 +70,7 @@
                     <label for="additional_prompt" class="form-label">Input additional prompt (optional)</label>
                     <input type="text" id="additional_prompt" name="additional_prompt" class="form-control" value="{{ additional_prompt }}" placeholder="Example: 並且以表格列出每季自由現金流增減的速度與加速度">
                 </div>
+
                 <div class="mb-3">
                     <label for="model" class="form-label">Select Gemini Model</label>
                     <select class="form-select" id="model" name="model">
@@ -67,7 +79,6 @@
                         <option value="gemini-2.0-flash" {% if model == 'gemini-2.0-flash' %}selected{% endif %}>gemini-2.0-flash</option>
                         <option value="gemini-3-flash-preview" {% if model == 'gemini-3-flash-preview' %}selected{% endif %}>gemini-3-flash-preview</option>
                         <option value="gemini-3-pro-preview" {% if model == 'gemini-3-pro-preview' %}selected{% endif %}>gemini-3-pro-preview</option>
-                        <option value="ggemini-3-flash-preview" {% if model == 'gemini-3-pro-preview' %}selected{% endif %}>gemini-3-flash-preview</option>
                     </select>
                 </div>
                 <div class="mb-3">
@@ -77,28 +88,47 @@
                 </div>
                 <button type="submit" class="btn btn-primary w-100">Analyze</button>
             </form>
+
             {% if error %}
                 <div class="alert alert-danger mt-4" role="alert">
                     {{ error }}
                 </div>
             {% endif %}
+
             {% if analysis %}
+                 <!-- Stock Chart -->
                 <br>
                 <div class="text-center mb-4">
                     {% if ".TW" in ticker %}
-                        <img src="https://stock.wearn.com/finance_chart.asp?stockid={{ ticker.replace('.TWO', '').replace('.TW', '') }}&timeblock=365&sma1=10&sma2=20&sma3=60&volume=1" alt="台股走勢圖" class="img-fluid rounded border">
+                        <img 
+                            src="https://stock.wearn.com/finance_chart.asp?stockid={{ ticker.replace('.TWO', '').replace('.TW', '') }}&timeblock=365&sma1=10&sma2=20&sma3=60&volume=1" 
+                            alt="台股走勢圖" 
+                            class="img-fluid rounded border"
+                        >
                     {% else %}
-                        <img src="https://charts2.finviz.com/chart.ashx?t={{ ticker }}&ta=1&ty=c&p=d&s=l" alt="美股走勢圖" class="img-fluid rounded border">
+                        <img 
+                            src="https://charts2.finviz.com/chart.ashx?t={{ ticker }}&ta=1&ty=c&p=d&s=l" 
+                            alt="美股走勢圖" 
+                            class="img-fluid rounded border"
+                        >
                     {% endif %}
                 </div>
+                <!-- Analysis Card -->
                 <div class="card mt-5 shadow">
-                    <div class="card-header bg-success text-white">📊 Analysis Result</div>
+                    <div class="card-header bg-success text-white">
+                        📊 Analysis Result
+                    </div>
                     <div class="card-body">
+                        <!-- <pre class="p-3 bg-white rounded border"><code>{{ analysis }}</code></pre> -->
+                        <!-- 容器：渲染後 HTML 會插入這裡 -->
                         <div id="markdown-content" class="markdown-body"></div>
+                        <!-- 隱藏 markdown 原文 -->
                         <textarea id="raw-markdown" class="d-none">{{ analysis }}</textarea>
                     </div>
                 </div>
+                
                 <script>
+                    // 將 textarea 中的 markdown 轉為 HTML
                     const rawMarkdown = document.getElementById('raw-markdown').value;
                     document.getElementById('markdown-content').innerHTML = marked.parse(rawMarkdown);
                 </script>
@@ -119,5 +149,6 @@
         </div>
     </div>
 </div>
+
 </body>
 </html>
