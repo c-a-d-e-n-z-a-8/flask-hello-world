@@ -3299,7 +3299,7 @@ HTML_TEMPLATE = """
           <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
           <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
           <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button>
-          <button class="btn btn-outline-secondary" onclick="showPortfolioView(this)">Portfolio Realtime</button>
+          <button class="btn btn-outline-secondary" onclick="showPortfolioView(this)">Portfolio</button>
         </div>
         <div id="area-metric-selector" style="font-size:14px;">
           <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
