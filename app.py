@@ -2638,7 +2638,7 @@ class StockMonitor:
                 link = 'https://www.ptt.cc' + element.contents[1]['href']
                 date = a.contents[5].contents[5].text
               
-                tag = f"💲({ticker})"
+                tag = f'💲(<a href="https://www.pttweb.cc/ptt-search#gsc.tab=0&gsc.q={ticker}&gsc.sort=date" target="_blank" style="color:inherit;">{ticker}</a>)'
                 news_list.append({"date": date, "title": title, "link": link, "tag": tag})
                 
           time.sleep(0.5)
@@ -2658,7 +2658,7 @@ class StockMonitor:
     url = f'https://www.ptt.cc/bbs/{board}/index.html'
     
     try:
-      for _ in range(5):
+      for _ in range(10):
         r = requests.get(url, headers=headers, verify=False, cookies={'over18': '1'})
         if r.status_code == 200:
           r.encoding = 'utf-8'
@@ -2689,7 +2689,7 @@ class StockMonitor:
                 #print(f'  {k}/{symbol_des}: {title}')
                 link = 'https://www.ptt.cc' + element.contents[1]['href']
                 date = a.contents[5].contents[5].text
-                tag = f"👤({n})"
+                tag = f'👤(<a href="https://www.pttweb.cc/user/{n}" target="_blank" style="color:inherit;">{n}</a>)'
                 news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
           time.sleep(0.5)
