@@ -1653,11 +1653,11 @@ TWSE_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0001"
 OTC_URL = "https://heatmap.fugle.tw/api/heatmaps/IX0043"
 
 # S&P 500 相關設定
-SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+SP500_CSV_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
 SP500_DATA_URL = "https://www.slickcharts.com/sp500"
 
 # Nasdaq 100 相關設定
-NDX_WIKI_URL = "https://en.wikipedia.org/wiki/Nasdaq-100"
+NDX_CSV_URL = "https://raw.githubusercontent.com/Ate329/top-us-stock-tickers/main/tickers/top_100.csv"
 NDX_DATA_URL = "https://www.slickcharts.com/nasdaq100"
 
 INDEX_LIST =  ["^TWII", "^TWOII", "00631L.TW", "^GSPC", "^RUT", "^N225", "^KS11", "VOO", "QQQ", "QLD", "000300.SS"]
@@ -1759,7 +1759,7 @@ def init_sp500_sectors():
     traceback.print_exc()
 '''
 def init_sp500_sectors():
-  """初始化 S&P 500 的 GICS Sector 對應表（從 Wikipedia 抓取）"""
+  """初始化 S&P 500 的 GICS Sector 對應表（從 GitHub CSV 抓取）"""
   global GICS_SECTOR_CACHE
 
   if GICS_SECTOR_CACHE:
@@ -1767,40 +1767,25 @@ def init_sp500_sectors():
     return
 
   try:
-    print("[DEBUG] Fetching S&P 500 GICS Sectors from Wikipedia...")
-    r = requests.get(SP500_WIKI_URL, impersonate="chrome120", timeout=15)
-    print(f"[DEBUG] Wikipedia S&P 500 Response: {r.status_code}")
+    print("[DEBUG] Fetching S&P 500 GICS Sectors from GitHub CSV...")
+    r = requests.get(SP500_CSV_URL, timeout=15)
+    print(f"[DEBUG] S&P 500 CSV Response: {r.status_code}")
 
     if r.status_code == 200:
-      soup = BS(r.text, 'html.parser')
-      table = soup.find('table', {'id': 'constituents'})
-      if not table:
-        table = soup.find('table', class_='wikitable sortable')
+      from io import StringIO as _SIO
+      df = pd.read_csv(_SIO(r.text))
+      for _, row in df.iterrows():
+        symbol = str(row.get('Symbol', '')).strip()
+        sector = str(row.get('GICS Sector', 'Unknown')).strip()
+        if symbol and symbol != 'nan':
+          GICS_SECTOR_CACHE[symbol] = sector
 
-      if table:
-        tbody = table.find('tbody')
-        if tbody:
-          rows = tbody.find_all('tr')
-          for row in rows:
-            cols = row.find_all('td')
-            if len(cols) >= 4:
-              try:
-                symbol = cols[0].text.strip()
-                sector = cols[3].text.strip()
-                sector = ' '.join(sector.split())
-                if symbol:
-                  GICS_SECTOR_CACHE[symbol] = sector
-              except Exception:
-                continue
-
-        print(f"[DEBUG] GICS Sectors loaded: {len(GICS_SECTOR_CACHE)} symbols")
-        print("[DEBUG] First 5 entries:")
-        for k, v in list(GICS_SECTOR_CACHE.items())[:5]:
-          print(f"  {k}: {v}")
-      else:
-        print("[WARN] S&P 500 table not found in Wikipedia page")
+      print(f"[DEBUG] GICS Sectors loaded: {len(GICS_SECTOR_CACHE)} symbols")
+      print("[DEBUG] First 5 entries:")
+      for k, v in list(GICS_SECTOR_CACHE.items())[:5]:
+        print(f"  {k}: {v}")
     else:
-      print(f"[WARN] Wikipedia S&P 500 fetch failed: {r.status_code}")
+      print(f"[WARN] S&P 500 CSV fetch failed: {r.status_code}")
 
   except Exception as e:
     print(f"[ERROR] Failed to load GICS Sectors: {e}")
@@ -1839,58 +1824,34 @@ def industry_label_us(symbol: str) -> str:
 
 
 def init_ndx_subsectors():
-  """初始化 Nasdaq 100 的 ICB Subsector 對應表 (只執行一次)"""
+  """初始化 Nasdaq 100 的 Subsector 對應表（從 GitHub CSV 抓取）"""
   global NDX_SUBSECTOR_CACHE
-  
+
   if NDX_SUBSECTOR_CACHE:
     print("[DEBUG] Nasdaq 100 Subsector Cache already loaded.")
     return
-  
+
   try:
-    print("[DEBUG] Fetching Nasdaq 100 ICB Subsectors from Wikipedia...")
-    
-    r = requests.get(NDX_WIKI_URL, impersonate="chrome120", timeout=15)
-    
-    print(f"[DEBUG] Wikipedia NDX Response: {r.status_code}")
-    
+    print("[DEBUG] Fetching Nasdaq 100 Subsectors from GitHub CSV...")
+    r = requests.get(NDX_CSV_URL, timeout=15)
+    print(f"[DEBUG] NDX CSV Response: {r.status_code}")
+
     if r.status_code == 200:
-      soup = BS(r.text, 'html.parser')
-      
-      # 找表格
-      table = soup.find('table', {'id': 'constituents'})
-      if not table:
-        table = soup.find('table', class_='wikitable sortable')
-      
-      if table:
-        tbody = table.find('tbody')
-        if tbody:
-          rows = tbody.find_all('tr')
-          
-          for idx, row in enumerate(rows):
-            cols = row.find_all('td')
-            
-            if len(cols) >= 4:
-              try:
-                ticker = cols[0].text.strip()
-                subsector = cols[3].text.strip()
-                subsector = ' '.join(subsector.split())  # 清理空白
-                
-                if ticker:
-                  NDX_SUBSECTOR_CACHE[ticker] = subsector
-                  
-              except Exception as e:
-                continue
-        
-        print(f"[DEBUG] Nasdaq 100 Subsectors loaded: {len(NDX_SUBSECTOR_CACHE)} symbols")
-        
-        # 驗證前 5 個
-        print("[DEBUG] First 5 entries:")
-        for i, (k, v) in enumerate(list(NDX_SUBSECTOR_CACHE.items())[:5]):
-          print(f"  {k}: {v}")
-          
-      else:
-        print("[WARN] Table not found")
-      
+      from io import StringIO as _SIO
+      df = pd.read_csv(_SIO(r.text))
+      for _, row in df.iterrows():
+        ticker = str(row.get('symbol', '')).strip()
+        subsector = str(row.get('industry', 'Unknown')).strip()
+        if ticker and ticker != 'nan':
+          NDX_SUBSECTOR_CACHE[ticker] = subsector
+
+      print(f"[DEBUG] Nasdaq 100 Subsectors loaded: {len(NDX_SUBSECTOR_CACHE)} symbols")
+      print("[DEBUG] First 5 entries:")
+      for k, v in list(NDX_SUBSECTOR_CACHE.items())[:5]:
+        print(f"  {k}: {v}")
+    else:
+      print(f"[WARN] NDX CSV fetch failed: {r.status_code}")
+
   except Exception as e:
     print(f"[ERROR] Failed to load Nasdaq 100 Subsectors: {e}")
     traceback.print_exc()
