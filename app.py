@@ -3309,7 +3309,7 @@ HTML_TEMPLATE = """
        <span class="fw-bold">Monitor System</span>
        <div class="d-flex align-items-center">
          <span class="badge bg-secondary" id="nt-time">--:--</span>
-         <span id="audio-btn" class="ms-2" style="cursor:pointer; font-size:1.1rem;" onclick="tryEnableSound()" title="點擊以啟用音效">🔇</span>
+         <span id="audio-btn" class="ms-2" style="cursor:pointer; font-size:1.1rem;" onclick="toggleSound(event)" title="點擊以啟用音效">🔇</span>
          <button class="btn btn-sm btn-outline-secondary ms-2" style="padding: 0px 6px; font-size: 0.8rem;" onclick="resetMonitor()">Reset</button>
        </div>
     </div>
@@ -3979,74 +3979,56 @@ function getCommunityLink(symbol) {
 
 
 // [新增] 音效狀態旗標
-let isSoundEnabled = false;
+let soundOn = false;
+const alertAudio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+
+// 依 soundOn 更新喇叭圖示外觀
+function refreshAudioBtn() {
+  const btn = document.getElementById('audio-btn');
+  if (!btn) return;
+  btn.innerText = soundOn ? "🔊" : "🔇";
+  btn.title = soundOn ? "音效已啟用 (點擊關閉)" : "點擊以啟用音效";
+  btn.style.color = soundOn ? "#198754" : "";
+}
 
 
 
 
 // [新增] 嘗試啟用音效 (解鎖瀏覽器限制)
-function tryEnableSound() {
-  const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
-  audio.volume = 0;
-
-  audio.play().then(() => {
-    isSoundEnabled = true;
-    const btn = document.getElementById('audio-btn');
-    if (btn) {
-      btn.innerText = "🔊";
-      btn.title = "音效已啟用 (點擊關閉)";
-      btn.style.color = "#198754";
-      btn.onclick = disableSound;
-    }
-    console.log("[System] Audio Autoplay Unlocked!");
-  }).catch(e => {
-    console.warn("音效啟用失敗 (需使用者互動):", e);
-  });
-}
-
-function disableSound() {
-  isSoundEnabled = false;
-  const btn = document.getElementById('audio-btn');
-  if (btn) {
-    btn.innerText = "🔇";
-    btn.title = "點擊以啟用音效";
-    btn.style.color = "";
-    btn.onclick = tryEnableSound;
+// 喇叭按鈕：切換音效開/關
+// event.stopPropagation() 是關鍵 —— 阻止 click 冒泡到 document 的全域監聽器，
+// 否則關閉後會立刻被全域監聽器重新啟用 (原本按鈕失效的主因)。
+function toggleSound(event) {
+  if (event) event.stopPropagation();
+  if (soundOn) {
+    soundOn = false;
+    refreshAudioBtn();
+    return;
   }
-  console.log("[System] Audio Disabled.");
+  // 在使用者手勢中先靜音播放一次，解鎖瀏覽器的自動播放限制
+  alertAudio.volume = 0;
+  alertAudio.play().then(() => {
+    alertAudio.pause();
+    alertAudio.currentTime = 0;
+    soundOn = true;
+    refreshAudioBtn();
+    console.log("[System] Audio enabled.");
+  }).catch(e => {
+    console.warn("音效啟用失敗 (瀏覽器阻擋):", e);
+  });
 }
 
 
 
 
 // [修改] 警示音效函式 (增強版)
+// 警示音：僅在使用者已啟用時才播放 (關閉後不再作響)
 function playAlertSound() {
-  const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
-  audio.volume = 1.0; 
-  
-  audio.play().then(() => {
-    // 如果這次播放成功，順便更新 UI 狀態
-    if (!isSoundEnabled) {
-      isSoundEnabled = true;
-      const btn = document.getElementById('audio-btn');
-      if (btn) {
-        btn.innerText = "🔊";
-        btn.title = "音效已啟用 (點擊關閉)";
-        btn.style.color = "#198754";
-        btn.onclick = disableSound;
-      }
-    }
-  }).catch(e => {
-    console.warn("警示音被阻擋，請點擊頁面以啟用音效");
-    // 讓喇叭圖示變紅閃爍，提示使用者去點擊
-    const btn = document.getElementById('audio-btn');
-    if(btn) {
-        btn.style.color = "#dc3545"; // 紅色
-        btn.innerText = "🔇";
-        // 簡單的閃爍效果
-        setTimeout(() => btn.style.color = "", 300);
-        setTimeout(() => btn.style.color = "#dc3545", 600);
-    }
+  if (!soundOn) return;
+  alertAudio.volume = 1.0;
+  try { alertAudio.currentTime = 0; } catch (e) {}
+  alertAudio.play().catch(e => {
+    console.warn("警示音播放失敗:", e);
   });
 }
 
@@ -4382,13 +4364,9 @@ window.addEventListener('resize', () => { if(chartInstance) chartInstance.resize
 
 // [修改] 全域點擊監聽
 document.addEventListener('click', function globalInteract() {
-  // 1. 嘗試解鎖音效
-  if (!isSoundEnabled) {
-      tryEnableSound();
-  }
-
-  // 2. [新增] 停止標題閃爍 (代表使用者已經看到並處理了)
-  stopTabFlashing();  
+  // 使用者點擊頁面代表已看到警示 → 停止標題閃爍
+  // (不再自動解鎖音效；音效改由喇叭按鈕全權控制，避免與按鈕互相打架)
+  stopTabFlashing();
 }, { once: false });
 
 
