@@ -3009,31 +3009,24 @@ HTML_TEMPLATE = """
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
   <style>
-  body { background-color: #f8f9fa; margin: 0; padding: 0; overflow: hidden; }
+  :root {
+    --o-brand:#0f6cbd; --o-brand-dark:#0c5aa0; --o-bar:#0f6cbd;
+    --o-ribbon:#faf9f8; --o-bg:#f3f2f1; --o-card:#ffffff; --o-border:#edebe9;
+    --o-text:#201f1e; --o-text-sub:#605e5c; --o-hover:#f3f2f1;
+    --o-shadow:0 1.6px 3.6px rgba(0,0,0,.10),0 .3px .9px rgba(0,0,0,.07);
+  }
+  body {
+    background-color: var(--o-bg); margin: 0; padding: 0; overflow: hidden;
+    font-family:'Segoe UI','Segoe UI Web (West European)',-apple-system,system-ui,'Microsoft JhengHei','微軟正黑體',sans-serif;
+    color: var(--o-text);
+  }
   .container-fluid { padding: 0 !important; margin: 0 !important; }
   .row { margin: 0 !important; }
   .col-lg-8 { padding: 0 !important; } 
-  .card { border: none; border-radius: 0; margin: 0; }
+  .card { border:1px solid var(--o-border) !important; border-radius:8px !important; margin:0; background:var(--o-card); box-shadow:var(--o-shadow); overflow:hidden; }
+  .card-header { background:#fbfafa !important; color:var(--o-text) !important; border-bottom:1px solid var(--o-border); font-weight:600; }
   .card-body { padding: 0 !important; }
 
-  .heatmap-header {
-    height: auto;
-    min-height: 50px;
-    background: #fff;
-    border-bottom: 1px solid #ddd;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    padding: 5px 15px;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .heatmap-header-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
   .interval-bar {
     margin-left: auto;
     font-size: 12px;
@@ -3050,17 +3043,17 @@ HTML_TEMPLATE = """
   .interval-bar label { margin-right: 4px; }
   #chart-container {
     width: 100%;
-    height: calc(100vh - 60px);
+    height: calc(100vh - 112px);
+    background: var(--o-card); border:1px solid var(--o-border); border-radius:8px; box-shadow: var(--o-shadow);
   }
 
-  .notify-panel { height: 100vh; overflow-y: auto; background: #fff; border-left: 2px solid #ddd; }
-  .control-bar { padding: 10px; background: #eee; border-bottom: 1px solid #ccc; font-size: 0.9rem; }
+  .notify-panel { height: calc(100vh - 112px); overflow: hidden; background: var(--o-card); border:1px solid var(--o-border); border-radius:8px; box-shadow: var(--o-shadow); display:flex; flex-direction:column; }
   
   /* 表格樣式 */
-  .table-custom { font-size: 0.9rem; width: 100%; margin-bottom: 0; }
-  .table-custom th { background-color: #343a40; color: #fff; padding: 8px; font-weight: normal; }
-  .table-custom td { padding: 8px; vertical-align: middle; border-bottom: 1px solid #eee; }
-  .table-custom tr:hover { background-color: #f1f1f1; }
+  .table-custom { font-size: 13px; width: 100%; margin-bottom: 0; }
+  .table-custom th { background:#fbfafa; color: var(--o-text-sub); padding: 8px 12px; font-weight: 600; font-size:12px; border-bottom:1px solid var(--o-border); }
+  .table-custom td { padding: 9px 12px; vertical-align: middle; border-bottom: 1px solid var(--o-border); }
+  .table-custom tr:hover { background-color: var(--o-hover); }
   
   .news-item { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 0.85rem; line-height: 1.4; }
   .news-link {
@@ -3075,8 +3068,8 @@ HTML_TEMPLATE = """
     text-decoration: underline; /* 增加底線提示 */
   }
   
-  .up { color: #dc3545; font-weight: bold; }
-  .down { color: #198754; font-weight: bold; }
+  .up { color: #d13438; font-weight: bold; }
+  .down { color: #107c10; font-weight: bold; }
   .neutral { color: #6c757d; font-weight: normal; }  /* 灰色,較淡 */
   
   /* 警示標籤 */
@@ -3192,7 +3185,7 @@ HTML_TEMPLATE = """
 
   /* 5. [關鍵修正] 強制改變排列與寬度 */
   body.mobile-mode .main-row {
-    flex-direction: column-reverse !important; /* 讓 Monitor 跑到上面 */
+    flex-direction: column !important; /* Monitor(左欄) 在手機上置頂 */
   }
 
   /* 這裡就是解決無法滿版的核心代碼 */
@@ -3244,101 +3237,195 @@ HTML_TEMPLATE = """
     background: #f9f9f9;
     border-radius: 3px;
   }
+
+  /* ===== Outlook chrome: top command bar + ribbon ===== */
+  .col-lg-8 { padding: 8px !important; }
+  .col-lg-4 { padding: 8px !important; }
+  /* ===== Inbox tabs (Monitor / PTT News) ===== */
+  .o-tabstrip { flex:none; display:flex; align-items:center; justify-content:space-between; padding:4px 8px 0 8px; border-bottom:1px solid var(--o-border); }
+  .o-tabs { display:flex; gap:2px; }
+  .o-tab { border:none; background:transparent; padding:8px 14px; font-size:14px; font-weight:600; color:var(--o-text-sub); cursor:pointer; border-bottom:2px solid transparent; }
+  .o-tab:hover { color:var(--o-text); }
+  .o-tab.active { color:var(--o-brand-dark); border-bottom-color:var(--o-brand); }
+  .o-tab-tools { display:flex; align-items:center; gap:6px; padding-bottom:4px; }
+  .o-tabpane { flex:1 1 auto; overflow-y:auto; min-height:0; }
+  .o-tabpane .table-custom thead th { position:sticky; top:0; z-index:2; }
+  /* ===== Stealth mode: fake email list ===== */
+  #fake-mail { height:calc(100vh - 112px); overflow-y:auto; background:var(--o-card); border:1px solid var(--o-border); border-radius:8px; box-shadow:var(--o-shadow); }
+  body.mobile-mode #fake-mail { height:600px; }
+  .mail-toolbar { padding:12px 16px; font-size:15px; font-weight:600; border-bottom:1px solid var(--o-border); display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; background:var(--o-card); z-index:2; }
+  .mail-item { display:flex; gap:10px; padding:10px 14px; border-bottom:1px solid var(--o-border); cursor:pointer; align-items:flex-start; }
+  .mail-item:hover { background:var(--o-hover); }
+  .mail-dot { width:8px; height:8px; border-radius:50%; background:var(--o-brand); margin-top:7px; flex:none; visibility:hidden; }
+  .mail-item.unread .mail-dot { visibility:visible; }
+  .mail-item.unread .mail-from, .mail-item.unread .mail-subj { font-weight:700; }
+  .mail-avatar { width:34px; height:34px; border-radius:50%; font-weight:600; font-size:13px; display:grid; place-items:center; flex:none; }
+  .mail-main { min-width:0; flex:1; }
+  .mail-row1 { display:flex; justify-content:space-between; }
+  .mail-from { font-size:14px; color:var(--o-text); }
+  .mail-time { font-size:12px; color:var(--o-text-sub); flex:none; margin-left:8px; }
+  .mail-subj { font-size:13px; color:var(--o-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mail-prev { font-size:12px; color:var(--o-text-sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .o-topbar { height:48px; background:var(--o-bar); display:flex; align-items:center; color:#fff; gap:4px; padding-right:4px; }
+  .o-waffle { width:48px; height:48px; display:grid; place-items:center; cursor:pointer; border:none; background:transparent; color:#fff; }
+  .o-waffle:hover { background:rgba(255,255,255,.12); }
+  .o-appname { font-size:18px; font-weight:600; letter-spacing:.2px; padding:0 12px 0 4px; white-space:nowrap; }
+  .o-search { flex:1; max-width:640px; margin:0 auto; height:32px; background:#fff; border-radius:4px; display:flex; align-items:center; padding:0 10px; color:var(--o-text-sub); font-size:14px; }
+  .o-search svg { margin-right:8px; flex:none; }
+  .o-search input { flex:1; min-width:0; border:none; outline:none; background:transparent; font-size:14px; color:var(--o-text); font-family:inherit; }
+  .o-search input::placeholder { color:var(--o-text-sub); }
+  .o-topbar-right { display:flex; align-items:center; gap:2px; margin-left:auto; flex:none; }
+  .o-iconbtn { width:40px; height:48px; border:none; background:transparent; color:#fff; cursor:pointer; font-size:16px; display:grid; place-items:center; }
+  .o-iconbtn:hover { background:rgba(255,255,255,.12); }
+  .o-ribbon { height:48px; background:var(--o-ribbon); border-bottom:1px solid var(--o-border); display:flex; align-items:center; padding:0 12px; gap:8px; overflow-x:auto; }
+  .o-ribbon .btn-group { display:flex; gap:2px; }
+  .o-ribbon .btn { border:none !important; background:transparent !important; color:var(--o-text) !important; border-radius:4px !important; padding:6px 12px !important; font-size:14px !important; box-shadow:none !important; white-space:nowrap; }
+  .o-ribbon .btn:hover { background:var(--o-hover) !important; }
+  .o-ribbon .btn.active { background:#e1eefb !important; color:var(--o-brand-dark) !important; font-weight:600; }
+  .o-ribbon-sep { width:1px; height:24px; background:var(--o-border); margin:0 4px; flex:none; }
+  body.mobile-mode .o-ribbon { height:auto; flex-wrap:wrap; padding:6px 12px; }
+  /* 手機頂部列：縮小各元件、讓搜尋框吸收剩餘寬度，確保 ⚙❔ET 與鈴鐺同排不溢出 */
+  body.mobile-mode .o-topbar { gap:0; padding-right:2px; }
+  body.mobile-mode .o-waffle { width:40px; }
+  body.mobile-mode .o-appname { font-size:14px; padding:0 4px; max-width:34vw; overflow:hidden; text-overflow:ellipsis; display:inline-block; vertical-align:middle; }
+  body.mobile-mode .o-search { max-width:none; }
+  body.mobile-mode .o-iconbtn { width:34px; font-size:15px; }
   </style>
 </head>
 <body>
 
+<div class="o-topbar">
+  <button class="o-waffle" title="App launcher">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="#fff">
+      <rect x="1" y="1" width="4" height="4" rx="1"/><rect x="8" y="1" width="4" height="4" rx="1"/><rect x="15" y="1" width="4" height="4" rx="1"/>
+      <rect x="1" y="8" width="4" height="4" rx="1"/><rect x="8" y="8" width="4" height="4" rx="1"/><rect x="15" y="8" width="4" height="4" rx="1"/>
+      <rect x="1" y="15" width="4" height="4" rx="1"/><rect x="8" y="15" width="4" height="4" rx="1"/><rect x="15" y="15" width="4" height="4" rx="1"/>
+    </svg>
+  </button>
+  <span class="o-appname">Stock Dashboard</span>
+  <div class="o-search">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#605e5c" stroke-width="1.5">
+      <circle cx="7" cy="7" r="5"/><line x1="11" y1="11" x2="15" y2="15"/>
+    </svg>
+    <input id="inbox-search" type="text" placeholder="搜尋股票代碼 / 名稱 / 新聞" oninput="applyInboxFilter()" autocomplete="off">
+  </div>
+  <div class="o-topbar-right">
+    <button class="o-iconbtn" title="通知">🔔</button>
+    <button class="o-iconbtn" title="設定">⚙</button>
+    <button class="o-iconbtn" title="說明" onclick="toggleStealth()">❔</button>
+  </div>
+</div>
+
+<div class="o-ribbon">
+  <div class="btn-group btn-group-sm">
+    <button class="btn btn-outline-dark active" onclick="setMarket(this, 'twse', 'INDEX')">上市指數</button>
+    <button class="btn btn-outline-dark" onclick="setMarket(this, 'twse', 'EQUITY')">上市個股</button>
+    <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
+    <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
+    <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
+    <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button>
+    <button class="btn btn-outline-secondary" onclick="showPortfolioView(this)">Portfolio</button>
+  </div>
+  <div class="o-ribbon-sep"></div>
+  <div id="area-metric-selector" style="font-size:14px;">
+    <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
+    <label class="ms-2" style="cursor:pointer"><input type="radio" name="area_metric" value="marketValueWeight" onchange="updateHeatmap()"> 市值</label>
+  </div>
+  <div class="interval-bar">
+    <span>更新間隔：</span>
+    <label>Heatmap
+      <select id="interval-heatmap" onchange="restartHeatmapInterval()">
+        <option value="30000">30s</option>
+        <option value="60000">1m</option>
+        <option value="120000">2m</option>
+        <option value="300000" selected>5m</option>
+        <option value="600000">10m</option>
+      </select>
+    </label>
+    <label>Portfolio
+      <select id="interval-portfolio" onchange="restartPortfolioInterval()">
+        <option value="30000">30s</option>
+        <option value="60000">1m</option>
+        <option value="120000">2m</option>
+        <option value="300000" selected>5m</option>
+        <option value="600000">10m</option>
+      </select>
+    </label>
+    <label>Monitor
+      <select id="interval-monitor" onchange="restartMonitorInterval()">
+        <option value="30000">30s</option>
+        <option value="60000">1m</option>
+        <option value="120000" selected>2m</option>
+        <option value="300000">5m</option>
+        <option value="600000">10m</option>
+      </select>
+    </label>
+  </div>
+</div>
+
 <div class="container-fluid">
   <div class="row main-row">
-  <div class="col-lg-8">
-    <div class="heatmap-header">
-      <div class="heatmap-header-row">
-        <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-dark active" onclick="setMarket(this, 'twse', 'INDEX')">上市指數</button>
-          <button class="btn btn-outline-dark" onclick="setMarket(this, 'twse', 'EQUITY')">上市個股</button>
-          <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
-          <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
-          <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
-          <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button>
-          <button class="btn btn-outline-secondary" onclick="showPortfolioView(this)">Portfolio</button>
-        </div>
-        <div id="area-metric-selector" style="font-size:14px;">
-          <label style="cursor:pointer"><input type="radio" name="area_metric" value="tradeValueWeight" checked onchange="updateHeatmap()"> 成交值</label>
-          <label class="ms-2" style="cursor:pointer"><input type="radio" name="area_metric" value="marketValueWeight" onchange="updateHeatmap()"> 市值</label>
-        </div>
-      </div>
-      <div class="heatmap-header-row interval-bar">
-        <span>更新間隔：</span>
-        <label>Heatmap
-          <select id="interval-heatmap" onchange="restartHeatmapInterval()">
-            <option value="30000">30s</option>
-            <option value="60000">1m</option>
-            <option value="120000">2m</option>
-            <option value="300000" selected>5m</option>
-            <option value="600000">10m</option>
-          </select>
-        </label>
-        <label>Portfolio
-          <select id="interval-portfolio" onchange="restartPortfolioInterval()">
-            <option value="30000">30s</option>
-            <option value="60000">1m</option>
-            <option value="120000">2m</option>
-            <option value="300000" selected>5m</option>
-            <option value="600000">10m</option>
-          </select>
-        </label>
-        <label>Monitor
-          <select id="interval-monitor" onchange="restartMonitorInterval()">
-            <option value="30000">30s</option>
-            <option value="60000">1m</option>
-            <option value="120000" selected>2m</option>
-            <option value="300000">5m</option>
-            <option value="600000">10m</option>
-          </select>
-        </label>
-      </div>
-    </div>
-    <div id="chart-container"></div>
-    <div id="portfolio-grid"></div>
-  </div>
-
   <div class="col-lg-4">
     <div class="notify-panel">
-    
-    <div class="control-bar d-flex justify-content-between align-items-center">
-       <span class="fw-bold">Monitor System</span>
-       <div class="d-flex align-items-center">
-         <span class="badge bg-secondary" id="nt-time">--:--</span>
-         <span id="audio-btn" class="ms-2" style="cursor:pointer; font-size:1.1rem;" onclick="toggleSound(event)" title="點擊以啟用音效">🔇</span>
-         <button class="btn btn-sm btn-outline-secondary ms-2" style="padding: 0px 6px; font-size: 0.8rem;" onclick="resetMonitor()">Reset</button>
-       </div>
-    </div>
-    
-    <div class="card">
-      <div class="card-body">
-         <table class="table-custom">
-            <thead>
-               <tr>
-                <th style="width: 20%">股票</th>
-                <th style="width: 20%">價/幅</th>
-                <th style="width: 15%">變動率</th>
-                <th style="width: 45%">警示</th>
-               </tr>
-            </thead>
-            <tbody id="stock-table-body">
-               <tr><td colspan="4" class="text-center text-muted">載入中...</td></tr>
-            </tbody>
-         </table>
+      <div class="o-tabstrip">
+        <div class="o-tabs">
+          <button class="o-tab active" data-tab="monitor" onclick="switchInboxTab('monitor')">Monitor</button>
+          <button class="o-tab" data-tab="news" onclick="switchInboxTab('news')">PTT / News</button>
+        </div>
+        <div class="o-tab-tools">
+          <span class="badge bg-secondary" id="nt-time">--:--</span>
+          <span id="audio-btn" style="cursor:pointer; font-size:1.1rem;" onclick="toggleSound(event)" title="點擊以啟用音效">🔇</span>
+          <button class="btn btn-sm btn-outline-secondary" style="padding: 0px 6px; font-size: 0.8rem;" onclick="resetMonitor()">Reset</button>
+        </div>
       </div>
-    </div>
 
-    <div class="card mt-2">
-      <div class="card-header bg-secondary text-white rounded-0" style="padding: 5px 10px; font-size: 0.9rem;">PTT Stock / News</div>
-      <div class="card-body" id="news-container">
-       <div class="text-center p-3 text-muted">載入中...</div>
+      <div id="tab-monitor" class="o-tabpane">
+        <table class="table-custom">
+          <thead>
+            <tr>
+              <th style="width: 20%">股票</th>
+              <th style="width: 20%">價/幅</th>
+              <th style="width: 15%">變動率</th>
+              <th style="width: 45%">警示</th>
+            </tr>
+          </thead>
+          <tbody id="stock-table-body">
+            <tr><td colspan="4" class="text-center text-muted">載入中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="tab-news" class="o-tabpane" style="display:none;">
+        <div id="news-container">
+          <div class="text-center p-3 text-muted">載入中...</div>
+        </div>
       </div>
     </div>
-    
+  </div>
+
+  <div class="col-lg-8">
+    <div id="chart-container"></div>
+    <div id="portfolio-grid"></div>
+
+    <div id="fake-mail" style="display:none;">
+      <div class="mail-toolbar">
+        <span>通知</span>
+        <span style="font-weight:400; color:var(--o-text-sub); font-size:12px;">依日期排序 ↓ · 3 未讀</span>
+      </div>
+      <div class="mail-list">
+        <div class="mail-item unread"><span class="mail-dot"></span><div class="mail-avatar" style="background:#dff6dd;">📈</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Price Alert</span><span class="mail-time">09:12</span></div><div class="mail-subj">觸及目標價 $184.00</div><div class="mail-prev">已達到你在觀察清單設定的價格提醒。</div></div></div>
+        <div class="mail-item unread"><span class="mail-dot"></span><div class="mail-avatar" style="background:#e1eefb;">🔔</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Market News</span><span class="mail-time">09:01</span></div><div class="mail-subj">台股開盤上漲 0.8%，半導體領漲</div><div class="mail-prev">加權指數站上季線，權值股表現強勢。</div></div></div>
+        <div class="mail-item unread"><span class="mail-dot"></span><div class="mail-avatar" style="background:#d4eefb;">🌐</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Global Markets</span><span class="mail-time">08:45</span></div><div class="mail-subj">Fed keeps rates steady; futures edge higher</div><div class="mail-prev">US index futures rose modestly after the decision.</div></div></div>
+        <div class="mail-item"><span class="mail-dot"></span><div class="mail-avatar" style="background:#dce8f7;">📊</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Watchlist Update</span><span class="mail-time">08:20</span></div><div class="mail-subj">觀察清單今日異動摘要</div><div class="mail-prev">12 檔上漲、5 檔下跌，整體成交量放大。</div></div></div>
+        <div class="mail-item"><span class="mail-dot"></span><div class="mail-avatar" style="background:#efdbff;">📅</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Earnings Reminder</span><span class="mail-time">07:55</span></div><div class="mail-subj">本週財報行事曆：3 檔持股公布</div><div class="mail-prev">留意季度營收與 EPS 年增率的變化。</div></div></div>
+        <div class="mail-item"><span class="mail-dot"></span><div class="mail-avatar" style="background:#e1eefb;">💹</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Tech News</span><span class="mail-time">07:40</span></div><div class="mail-subj">AI 晶片需求帶動供應鏈拉貨動能</div><div class="mail-prev">分析師上修下半年出貨預估。</div></div></div>
+        <div class="mail-item"><span class="mail-dot"></span><div class="mail-avatar" style="background:#fff4ce;">💰</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Dividend Notice</span><span class="mail-time">07:15</span></div><div class="mail-subj">除息提醒：2 檔持股即將除息</div><div class="mail-prev">本週除息日與填息機率一覽。</div></div></div>
+        <div class="mail-item"><span class="mail-dot"></span><div class="mail-avatar" style="background:#d4eefb;">📰</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Market Recap</span><span class="mail-time">昨天</span></div><div class="mail-subj">昨日收盤回顧與盤後重點</div><div class="mail-prev">三大指數收紅，資金流向科技類股。</div></div></div>
+        <div class="mail-item"><span class="mail-dot"></span><div class="mail-avatar" style="background:#fde7e9;">⚠️</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Risk Alert</span><span class="mail-time">昨天</span></div><div class="mail-subj">VIX 波動度指數上升至 18.5</div><div class="mail-prev">市場情緒轉趨謹慎，注意部位控管。</div></div></div>
+        <div class="mail-item"><span class="mail-dot"></span><div class="mail-avatar" style="background:#fff4ce;">🛢️</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Commodities</span><span class="mail-time">昨天</span></div><div class="mail-subj">油價走穩，黃金小幅回落</div><div class="mail-prev">市場評估供給前景與美元走勢。</div></div></div>
+        <div class="mail-item"><span class="mail-dot"></span><div class="mail-avatar" style="background:#dff6dd;">🧾</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">Portfolio Digest</span><span class="mail-time">週一</span></div><div class="mail-subj">每週投資組合摘要已產生</div><div class="mail-prev">本週報酬 +1.4%，波動度較上週下降。</div></div></div>
+        <div class="mail-item"><span class="mail-dot"></span><div class="mail-avatar" style="background:#e2e2e2;">⚙</div><div class="mail-main"><div class="mail-row1"><span class="mail-from">System</span><span class="mail-time">週一</span></div><div class="mail-subj">行情與籌碼資料同步完成</div><div class="mail-prev">已更新至最新交易日。</div></div></div>
+      </div>
     </div>
   </div>
   </div>
@@ -3353,6 +3440,47 @@ let monitorInterval = null;
 
 function fmtNum(n) { if(n === undefined) return '0'; return n.toLocaleString('en-US'); }
 function fmtFloat(n, d=2) { if(n === undefined) return '0.00'; return n.toFixed(d); }
+
+// Inbox 分頁切換 (Monitor / PTT News)
+function switchInboxTab(tab) {
+  document.querySelectorAll('.o-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.getElementById('tab-monitor').style.display = (tab === 'monitor') ? '' : 'none';
+  document.getElementById('tab-news').style.display = (tab === 'news') ? '' : 'none';
+}
+
+// 頂部搜尋：即時過濾 Monitor 清單與 PTT/新聞 (雙欄同步)
+function applyInboxFilter() {
+  const input = document.getElementById('inbox-search');
+  const q = (input ? input.value : '').trim().toLowerCase();
+  document.querySelectorAll('#stock-table-body > tr').forEach(tr => {
+    tr.style.display = (!q || tr.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+  document.querySelectorAll('#news-container > .news-item').forEach(item => {
+    item.style.display = (!q || item.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+}
+
+// 隱藏看盤 (boss key)：右側切換成模擬 email 清單，再按一次還原
+let stealthMode = false;
+let stealthPrev = null;
+function toggleStealth() {
+  const chart = document.getElementById('chart-container');
+  const pf = document.getElementById('portfolio-grid');
+  const mail = document.getElementById('fake-mail');
+  stealthMode = !stealthMode;
+  if (stealthMode) {
+    stealthPrev = { chart: chart.style.display, pf: pf.style.display };
+    chart.style.display = 'none';
+    pf.style.display = 'none';
+    mail.style.display = 'block';
+  } else {
+    if (stealthPrev) {
+      chart.style.display = stealthPrev.chart;
+      pf.style.display = stealthPrev.pf;
+    }
+    mail.style.display = 'none';
+  }
+}
 
 
 
@@ -4154,7 +4282,10 @@ async function updateNotify() {
 
     // ===== 新增：綁定 hover 事件 =====
     attachStockHoverEvents();
-    
+
+    // 重新套用搜尋過濾 (list 每次刷新都會重建 innerHTML)
+    applyInboxFilter();
+
   } catch(e) { console.error("Notify Error:", e); }
 }
 
