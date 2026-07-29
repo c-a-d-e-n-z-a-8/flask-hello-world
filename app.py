@@ -3249,6 +3249,10 @@ HTML_TEMPLATE = """
   .o-tab.active { color:var(--o-brand-dark); border-bottom-color:var(--o-brand); }
   .o-tab-tools { display:flex; align-items:center; gap:6px; padding-bottom:4px; }
   .o-tabpane { flex:1 1 auto; overflow-y:auto; min-height:0; }
+  .iframe-view { display:none; width:100%; height:calc(100vh - 112px); background:var(--o-card); border:1px solid var(--o-border); border-radius:8px; box-shadow:var(--o-shadow); overflow:hidden; }
+  .iframe-view iframe { width:calc(100% + 200px); height:100%; border:none; margin-left:-200px; }
+  body.mobile-mode .iframe-view { height:600px; }
+  body.mobile-mode .iframe-view iframe { width:100%; margin-left:0; }
   .o-tabpane .table-custom thead th { position:sticky; top:0; z-index:2; }
   /* ===== Stealth mode: fake email list ===== */
   #fake-mail { height:calc(100vh - 112px); overflow-y:auto; background:var(--o-card); border:1px solid var(--o-border); border-radius:8px; box-shadow:var(--o-shadow); }
@@ -3325,6 +3329,9 @@ HTML_TEMPLATE = """
     <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
     <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button>
     <button class="btn btn-outline-secondary" onclick="showPortfolioView(this)">Portfolio</button>
+    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-stock')">Stock</button>
+    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-price')">Price Dist</button>
+    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-osfut')">OS Futures</button>
   </div>
   <div class="o-ribbon-sep"></div>
   <div id="area-metric-selector" style="font-size:14px;">
@@ -3400,12 +3407,23 @@ HTML_TEMPLATE = """
           <div class="text-center p-3 text-muted">載入中...</div>
         </div>
       </div>
+
     </div>
   </div>
 
   <div class="col-lg-8">
     <div id="chart-container"></div>
     <div id="portfolio-grid"></div>
+
+    <div id="iframe-stock" class="iframe-view">
+      <iframe data-src="https://www.futures-ai.com/monitors/stock" loading="lazy"></iframe>
+    </div>
+    <div id="iframe-price" class="iframe-view">
+      <iframe data-src="https://www.futures-ai.com/stock-price-change-distribution" loading="lazy"></iframe>
+    </div>
+    <div id="iframe-osfut" class="iframe-view">
+      <iframe data-src="https://www.futures-ai.com/monitors/os-futures" loading="lazy"></iframe>
+    </div>
 
     <div id="fake-mail" style="display:none;">
       <div class="mail-toolbar">
@@ -3468,15 +3486,20 @@ function toggleStealth() {
   const pf = document.getElementById('portfolio-grid');
   const mail = document.getElementById('fake-mail');
   stealthMode = !stealthMode;
+  const iframes = document.querySelectorAll('.iframe-view');
   if (stealthMode) {
-    stealthPrev = { chart: chart.style.display, pf: pf.style.display };
+    stealthPrev = { chart: chart.style.display, pf: pf.style.display, iframes: Array.from(iframes).map(el => el.style.display) };
     chart.style.display = 'none';
     pf.style.display = 'none';
+    iframes.forEach(el => el.style.display = 'none');
     mail.style.display = 'block';
   } else {
     if (stealthPrev) {
       chart.style.display = stealthPrev.chart;
       pf.style.display = stealthPrev.pf;
+      if (stealthPrev.iframes) {
+        Array.from(iframes).forEach((el, i) => el.style.display = stealthPrev.iframes[i] || 'none');
+      }
     }
     mail.style.display = 'none';
   }
@@ -3487,6 +3510,7 @@ function toggleStealth() {
 
 function setMarket(btn, market, type) {
   hidePortfolioView();
+  hideIframeViews();
   document.querySelectorAll('.btn-group button').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   currentMarket = market;
@@ -3518,6 +3542,7 @@ function restartMonitorInterval() {
 }
 
 function showPortfolioView(btn) {
+  hideIframeViews();
   document.querySelectorAll('.btn-group button').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('chart-container').style.display = 'none';
@@ -3535,6 +3560,26 @@ function hidePortfolioView() {
   document.getElementById('chart-container').style.display = '';
   document.getElementById('area-metric-selector').style.display = '';
   document.getElementById('portfolio-grid').style.display = 'none';
+}
+
+function hideIframeViews() {
+  document.querySelectorAll('.iframe-view').forEach(el => el.style.display = 'none');
+}
+
+function showIframeView(btn, id) {
+  hidePortfolioView();
+  hideIframeViews();
+  document.querySelectorAll('.btn-group button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('chart-container').style.display = 'none';
+  document.getElementById('area-metric-selector').style.display = 'none';
+  const container = document.getElementById(id);
+  container.style.display = 'block';
+  // Lazy-load iframe src on first activation
+  const iframe = container.querySelector('iframe[data-src]');
+  if (iframe && !iframe.src) {
+    iframe.src = iframe.getAttribute('data-src');
+  }
 }
 
 async function loadPortfolioSparklines() {
