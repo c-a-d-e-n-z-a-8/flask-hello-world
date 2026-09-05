@@ -3250,7 +3250,7 @@ HTML_TEMPLATE = """
   .o-tab-tools { display:flex; align-items:center; gap:6px; padding-bottom:4px; }
   .o-tabpane { flex:1 1 auto; overflow-y:auto; min-height:0; }
   .iframe-view { display:none; width:100%; height:calc(100vh - 112px); background:var(--o-card); border:1px solid var(--o-border); border-radius:8px; box-shadow:var(--o-shadow); overflow:hidden; }
-  .iframe-view iframe { width:calc(100% + 200px); height:100%; border:none; margin-left:-200px; }
+  .iframe-view iframe { width:100%; height:100%; border:none; }
   body.mobile-mode .iframe-view { height:600px; }
   body.mobile-mode .iframe-view iframe { width:100%; margin-left:0; }
   .o-tabpane .table-custom thead th { position:sticky; top:0; z-index:2; }
@@ -3329,9 +3329,11 @@ HTML_TEMPLATE = """
     <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
     <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button>
     <button class="btn btn-outline-secondary" onclick="showPortfolioView(this)">Portfolio</button>
-    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-stock')">Stock</button>
-    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-price')">Price Dist</button>
-    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-osfut')">OS Futures</button>
+    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-trend')">TW-Trend</button>
+    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-ratio')">TW-Ratio</button>
+    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-breath')">TW-Breath</button>
+    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-today')">TW-Today</button>
+    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-market')">TW-Market</button>
   </div>
   <div class="o-ribbon-sep"></div>
   <div id="area-metric-selector" style="font-size:14px;">
@@ -3415,14 +3417,20 @@ HTML_TEMPLATE = """
     <div id="chart-container"></div>
     <div id="portfolio-grid"></div>
 
-    <div id="iframe-stock" class="iframe-view">
-      <iframe data-src="https://www.futures-ai.com/monitors/stock" loading="lazy"></iframe>
+    <div id="iframe-tw-trend" class="iframe-view">
+      <iframe data-src="https://c-a-d-e-n-z-a.github.io/webpage/group_trend.html" loading="lazy"></iframe>
     </div>
-    <div id="iframe-price" class="iframe-view">
-      <iframe data-src="https://www.futures-ai.com/stock-price-change-distribution" loading="lazy"></iframe>
+    <div id="iframe-tw-ratio" class="iframe-view">
+      <iframe data-src="https://c-a-d-e-n-z-a.github.io/webpage/margin_ratio.html" loading="lazy"></iframe>
     </div>
-    <div id="iframe-osfut" class="iframe-view">
-      <iframe data-src="https://www.futures-ai.com/monitors/os-futures" loading="lazy"></iframe>
+    <div id="iframe-tw-breath" class="iframe-view">
+      <iframe data-src="https://c-a-d-e-n-z-a.github.io/webpage/breadth_high_low.html" loading="lazy"></iframe>
+    </div>
+    <div id="iframe-tw-today" class="iframe-view">
+      <iframe data-src="https://finlab.finance/stocks/today" loading="lazy"></iframe>
+    </div>
+    <div id="iframe-tw-market" class="iframe-view">
+      <iframe data-src="https://ai.finlab.tw/tw_market/" loading="lazy"></iframe>
     </div>
 
     <div id="fake-mail" style="display:none;">
