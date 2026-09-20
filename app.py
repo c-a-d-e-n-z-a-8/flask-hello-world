@@ -2561,7 +2561,7 @@ class StockMonitor:
           author = a.contents[5].contents[1].text
           results.append((title, link, date, nrec, author))
 
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(random.uniform(0.3, 0.8))
 
     except Exception as e:
       print(f"[ERROR] PTT scrape {board} error: {e}")
@@ -2570,65 +2570,55 @@ class StockMonitor:
     return results
 
 
-  def _fetch_pttweb(self, board='Stock', pages=10):
-    """Fetch articles from pttweb.cc mirror (works globally, not blocked by Cloudflare).
+  def _fetch_ptt_api(self, board='Stock', pages=3):
+    """Fetch articles from go-pttbbs REST API (works globally, returns structured JSON).
     Returns list of (title, link, date, nrec, author) tuples matching _ptt_scrape_pages format."""
-    import re as _re
     results = []
-    seen_aids = set()
+    next_idx = ''
 
-    for page_num in range(1, pages + 1):
-      url = f'https://www.pttweb.cc/bbs/{board}' if page_num == 1 else f'https://www.pttweb.cc/bbs/{board}/page/{page_num}'
+    for page_num in range(pages):
       try:
+        url = f'https://api.devptt.dev/api/board/{board}/articles'
+        if next_idx:
+          url += f'?start_idx={next_idx}'
         r = requests.get(url, impersonate="chrome120", timeout=10, verify=False)
         if r.status_code != 200:
+          print(f"[WARN] PTT API {board} page {page_num+1} status={r.status_code}")
           break
 
-        soup = BS(r.text, 'html.parser')
+        data = r.json()
+        articles = data.get('list', [])
+        next_idx = data.get('next_idx', '')
 
-        # Build author map from NUXT SSR data
-        author_map = {}
-        for s in soup.find_all('script'):
-          if s.string and 'window.__NUXT__' in s.string:
-            for m in _re.finditer(r'articleAid:"(M\.\d+\.A\.\w+)",author:"([^"]+)"', s.string):
-              author_map[m.group(1)] = m.group(2)
-            break
-
-        # Parse article links from HTML
-        links = soup.find_all('a', href=lambda h: h and f'/bbs/{board}/M.' in h)
-        page_count = 0
-        for link in links:
-          href = link.get('href', '')
-          aid_match = _re.search(r'(M\.\d+\.A\.\w+)', href)
-          if not aid_match:
+        for a in articles:
+          if a.get('deleted'):
             continue
-          aid = aid_match.group(1)
-          if aid in seen_aids:
-            continue
-          title_span = link.select_one('span.e7-title')
-          if not title_span:
-            continue
-          title_parts = list(title_span.stripped_strings)
-          title = title_parts[0] if title_parts else ''
+          title = a.get('title', '')
           if not title:
             continue
+          aid = a.get('aid', '')
+          link = f'https://www.ptt.cc/bbs/{board}/{aid}.html' if aid else a.get('url', '')
+          nrec = str(a.get('recommend', ''))
+          author = a.get('owner', '')
+          date_str = ''
+          if a.get('create_time'):
+            try:
+              dt = datetime.fromtimestamp(a['create_time'])
+              date_str = f"{dt.month}/{dt.day:02d}"
+            except Exception:
+              pass
+          results.append((title, link, date_str, nrec, author))
 
-          seen_aids.add(aid)
-          page_count += 1
-          full_link = f'https://www.ptt.cc/bbs/{board}/{aid}.html'
-          author = author_map.get(aid, '')
-          results.append((title, full_link, '', '', author))
-
-        if page_count == 0:
+        if not next_idx or not articles:
           break
-        if page_num < pages:
-          time.sleep(random.uniform(0.5, 1.5))
+        if page_num < pages - 1:
+          time.sleep(random.uniform(0.3, 0.8))
 
       except Exception as e:
-        print(f"[ERROR] pttweb {board} page {page_num}: {e}")
+        print(f"[ERROR] PTT API {board} page {page_num+1}: {e}")
         break
 
-    print(f"[DEBUG] pttweb fetched {len(results)} articles for {board}")
+    print(f"[DEBUG] PTT API fetched {len(results)} articles for {board}")
     return results
 
 
@@ -2642,12 +2632,15 @@ class StockMonitor:
         tag = f"🔥({nrec})" if is_hot else "👀"
         news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
-    # Fallback: pttweb.cc mirror when direct scraping is blocked
+    # Fallback: go-pttbbs API when direct scraping is blocked
     if not news_list:
-      print("[DEBUG] PTT News: using pttweb fallback")
-      for title, link, date, nrec, author in self._fetch_pttweb('Stock'):
-        if any(k in title for k in keywords):
-          news_list.append({"date": date, "title": title, "link": link, "tag": "👀"})
+      print("[DEBUG] PTT News: using API fallback")
+      for title, link, date, nrec, author in self._fetch_ptt_api('Stock'):
+        matched = any(k in title for k in keywords)
+        is_hot = (nrec == '爆') or (nrec.isdigit() and int(nrec) > 20)
+        if matched or is_hot:
+          tag = f"🔥({nrec})" if is_hot else "👀"
+          news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
     return news_list
 
@@ -2668,10 +2661,10 @@ class StockMonitor:
           tag = f'💲(<a href="https://www.pttweb.cc/ptt-search#gsc.tab=0&gsc.q={ticker}&gsc.sort=date" target="_blank" style="color:inherit;">{ticker}</a>)'
           news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
-    # Fallback: pttweb.cc mirror when direct scraping is blocked
+    # Fallback: go-pttbbs API when direct scraping is blocked
     if not news_list and not scraped:
-      print("[DEBUG] PTT Tickers: using pttweb fallback")
-      for title, link, date, nrec, author in self._fetch_pttweb('Stock'):
+      print("[DEBUG] PTT Tickers: using API fallback")
+      for title, link, date, nrec, author in self._fetch_ptt_api('Stock'):
         for p in portfolio:
           symbol = p['symbol']
           symbol_des = (p['symbolName'].split(' '))[0]
@@ -2695,10 +2688,10 @@ class StockMonitor:
         tag = f'👤(<a href="https://www.pttweb.cc/user/{author}" target="_blank" style="color:inherit;">{author}</a>)'
         news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
-    # Fallback: pttweb.cc mirror when direct scraping is blocked
+    # Fallback: go-pttbbs API when direct scraping is blocked
     if not news_list and not scraped:
-      print("[DEBUG] PTT Authors: using pttweb fallback")
-      for title, link, date, nrec, author in self._fetch_pttweb(board):
+      print("[DEBUG] PTT Authors: using API fallback")
+      for title, link, date, nrec, author in self._fetch_ptt_api(board):
         if author in names:
           tag = f'👤(<a href="https://www.pttweb.cc/user/{author}" target="_blank" style="color:inherit;">{author}</a>)'
           news_list.append({"date": date, "title": title, "link": link, "tag": tag})
