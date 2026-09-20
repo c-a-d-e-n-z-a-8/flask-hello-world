@@ -2556,7 +2556,7 @@ class StockMonitor:
             continue
           title = element.text.strip('\n')
           link = 'https://www.ptt.cc' + element.contents[1]['href']
-          nrec = a.contents[1].text
+          nrec = a.contents[1].text.strip()
           date = a.contents[5].contents[5].text
           author = a.contents[5].contents[1].text
           results.append((title, link, date, nrec, author))
@@ -2568,6 +2568,20 @@ class StockMonitor:
       self._ptt_scrape_blocked = True
 
     return results
+
+
+  @staticmethod
+  def _parse_nrec(nrec_raw):
+    """將 PTT nrec 字串/數值安全轉為數值與顯示標籤"""
+    s = str(nrec_raw).strip()
+    if s == '爆':
+      return 100, '爆'
+    try:
+      val = int(s)
+      display = '爆' if val >= 100 else str(val)
+      return val, display
+    except (ValueError, TypeError):
+      return 0, s
 
 
   def _fetch_ptt_api(self, board='Stock', pages=3):
@@ -2627,9 +2641,10 @@ class StockMonitor:
 
     for title, link, date, nrec, author in self._ptt_scrape_pages('Stock', 5):
       matched = any(k in title for k in keywords)
-      is_hot = (nrec == '爆') or (nrec.isdigit() and int(nrec) > 20)
+      nrec_val, nrec_display = self._parse_nrec(nrec)
+      is_hot = (nrec_val >= 20)
       if matched or is_hot:
-        tag = f"🔥({nrec})" if is_hot else "👀"
+        tag = f"🔥({nrec_display})" if is_hot else "👀"
         news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
     # Fallback: go-pttbbs API when direct scraping is blocked
@@ -2637,9 +2652,10 @@ class StockMonitor:
       print("[DEBUG] PTT News: using API fallback")
       for title, link, date, nrec, author in self._fetch_ptt_api('Stock'):
         matched = any(k in title for k in keywords)
-        is_hot = (nrec == '爆') or (nrec.isdigit() and int(nrec) > 20)
+        nrec_val, nrec_display = self._parse_nrec(nrec)
+        is_hot = (nrec_val >= 20)
         if matched or is_hot:
-          tag = f"🔥({nrec})" if is_hot else "👀"
+          tag = f"🔥({nrec_display})" if is_hot else "👀"
           news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
     return news_list
