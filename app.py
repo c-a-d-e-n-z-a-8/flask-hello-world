@@ -36,6 +36,7 @@ si_url = os.environ.get('SI_URL')
 tw_sf_url = os.environ.get('TW_SF_URL')
 portfolio_url = os.environ.get('PORTFOLIO_URL')
 yahoo_url = os.environ.get('YAHOO_URL')
+ptt_proxy = os.environ.get('PTT_PROXY')  # Optional: e.g. socks5://user:pass@host:port
 
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
