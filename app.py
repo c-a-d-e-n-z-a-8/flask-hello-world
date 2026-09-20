@@ -37,6 +37,7 @@ tw_sf_url = os.environ.get('TW_SF_URL')
 portfolio_url = os.environ.get('PORTFOLIO_URL')
 yahoo_url = os.environ.get('YAHOO_URL')
 
+
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
 
@@ -2507,19 +2508,48 @@ class StockMonitor:
     print("[DEBUG] Portfolio Initialization Complete.")
 
 
+  def _fetch_ptt_rss(self, board='Stock'):
+    """Fetch PTT articles via Atom RSS feed (works globally, no IP restriction)."""
+    import xml.etree.ElementTree as ET
+    entries = []
+    try:
+      r = requests.get(f'https://www.ptt.cc/atom/{board}.xml', timeout=10, verify=False)
+      if r.status_code == 200:
+        root = ET.fromstring(r.text)
+        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+        for entry in root.findall('atom:entry', ns):
+          title = entry.find('atom:title', ns).text or ''
+          link = entry.find('atom:link', ns).get('href', '')
+          updated = entry.find('atom:updated', ns).text or ''
+          author_el = entry.find('atom:author/atom:name', ns)
+          author = author_el.text if author_el is not None else ''
+          # Extract short date from ISO timestamp (e.g. "2026-09-19T10:53:16+08:00" -> " 9/19")
+          date_short = updated
+          try:
+            dt = datetime.fromisoformat(updated)
+            date_short = f'{dt.month}/{dt.day:02d}'
+          except Exception:
+            pass
+          entries.append({'title': title, 'link': link, 'author': author, 'date': date_short})
+        print(f"[DEBUG] PTT RSS fetched {len(entries)} entries for {board}")
+    except Exception as e:
+      print(f"[ERROR] PTT RSS Error: {e}")
+    return entries
+
+
   def get_ptt_news(self, keywords):
     news_list = []
-    # print(f"[DEBUG] Scraping PTT News for keywords: {keywords[:3]}...") # Trace
     headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.170 Mobile Safari/537.36"}
     url = 'https://www.ptt.cc/bbs/Stock/index.html'
     try:
-      for i in range(5): # Print iteration
-        # print(f"  > PTT Page {i+1}, URL: {url}") 
-        r = requests.get(url, headers=headers, verify=False, cookies={'over18': '1'})
+      for i in range(5):
+        r = requests.get(url, headers=headers, verify=False, cookies={'over18': '1'}, timeout=10)
         if r.status_code == 200:
           soup = BS(r.text, 'html.parser')
           articles = soup.select('div.r-ent')
           paging = soup.select('div.btn-group-paging a')
+          if not paging or len(paging) < 2:
+            break
           url = 'https://www.ptt.cc' + paging[1]['href']
 
           for a in articles:
@@ -2543,10 +2573,21 @@ class StockMonitor:
               news_list.append({"date": date, "title": title, "link": link, "tag": tag})
               
           time.sleep(0.5)
+        else:
+          print(f"[WARN] PTT News scrape failed (status={r.status_code}), falling back to RSS")
+          break
           
     except Exception as e:
-      print(f"[ERROR] PTT News Error: {e}")
-      pass
+      print(f"[ERROR] PTT News scrape error: {e}")
+
+    # Fallback: RSS when scraping returned nothing
+    if not news_list:
+      print("[DEBUG] PTT News: using RSS fallback")
+      for entry in self._fetch_ptt_rss('Stock'):
+        matched = any(k in entry['title'] for k in keywords)
+        if matched:
+          news_list.append({"date": entry['date'], "title": entry['title'], "link": entry['link'], "tag": "👀"})
+
     return news_list
 
 
@@ -2554,30 +2595,29 @@ class StockMonitor:
 
   def get_ptt_tickers(self, portfolio):
     news_list = []
-    # print("[DEBUG] Scraping PTT for Tickers...")
     headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.170 Mobile Safari/537.36"}
     url = 'https://www.ptt.cc/bbs/Stock/index.html'
+    scrape_ok = False
 
     try:
       for _ in range(5):
-        r = requests.get(url, verify=False, cookies={'over18': '1'})
+        r = requests.get(url, headers=headers, verify=False, cookies={'over18': '1'}, timeout=10)
         if r.status_code == 200:
+          scrape_ok = True
           r.encoding = 'utf-8'
 
           soup = BS(r.text, 'html.parser')
-
-          # Get article list in current page
           articles = soup.select('div.r-ent')
-
-          # Find last page button
           paging = soup.select('div.btn-group-paging a')
+          if not paging or len(paging) < 2:
+            break
 
           url = 'https://www.ptt.cc' + paging[1]['href']
 
           for a in articles:
             element = a.contents[3]
 
-            if len(element.contents) < 2:  # Handle deleted article
+            if len(element.contents) < 2:
               continue
 
             title = element.text.strip('\n')
@@ -2587,7 +2627,6 @@ class StockMonitor:
               symbol = p['symbol']
               symbol_des = (p['symbolName'].split(' '))[0]
 
-              # Remove .TW or .TWO
               idx = symbol.find('.')
               if idx != -1:
                 ticker = symbol[:idx]
@@ -2595,7 +2634,6 @@ class StockMonitor:
                 ticker = symbol
 
               if (ticker in title) or (symbol_des in title):
-                #print(f'  {ticker}/{symbol_des}: {title}')
                 link = 'https://www.ptt.cc' + element.contents[1]['href']
                 date = a.contents[5].contents[5].text
               
@@ -2603,10 +2641,27 @@ class StockMonitor:
                 news_list.append({"date": date, "title": title, "link": link, "tag": tag})
                 
           time.sleep(0.5)
+        else:
+          print(f"[WARN] PTT Ticker scrape failed (status={r.status_code}), falling back to RSS")
+          break
           
     except Exception as e:
-      print(f"[ERROR] PTT Ticker Error: {e}")
-      pass
+      print(f"[ERROR] PTT Ticker scrape error: {e}")
+
+    # Fallback: RSS when scraping returned nothing
+    if not news_list and not scrape_ok:
+      print("[DEBUG] PTT Tickers: using RSS fallback")
+      for entry in self._fetch_ptt_rss('Stock'):
+        title = entry['title']
+        for p in portfolio:
+          symbol = p['symbol']
+          symbol_des = (p['symbolName'].split(' '))[0]
+          idx = symbol.find('.')
+          ticker = symbol[:idx] if idx != -1 else symbol
+          if (ticker in title) or (symbol_des in title):
+            tag = f'💲(<a href="https://www.pttweb.cc/ptt-search#gsc.tab=0&gsc.q={ticker}&gsc.sort=date" target="_blank" style="color:inherit;">{ticker}</a>)'
+            news_list.append({"date": entry['date'], "title": title, "link": entry['link'], "tag": tag})
+
     return news_list
 
 
@@ -2614,30 +2669,29 @@ class StockMonitor:
   
   def get_ptt_authors(self, board, names):
     news_list = []
-    # print(f"[DEBUG] Checking PTT Authors on {board}...")
     headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.170 Mobile Safari/537.36"}
     url = f'https://www.ptt.cc/bbs/{board}/index.html'
+    scrape_ok = False
     
     try:
       for _ in range(10):
-        r = requests.get(url, headers=headers, verify=False, cookies={'over18': '1'})
+        r = requests.get(url, headers=headers, verify=False, cookies={'over18': '1'}, timeout=10)
         if r.status_code == 200:
+          scrape_ok = True
           r.encoding = 'utf-8'
           
           soup = BS(r.text, 'html.parser')
-
-          # Get article list in current page
           articles = soup.select('div.r-ent')
-
-          # Find last page button
           paging = soup.select('div.btn-group-paging a')
+          if not paging or len(paging) < 2:
+            break
 
           url = 'https://www.ptt.cc' + paging[1]['href']
 
           for a in articles:
             element = a.contents[3]
 
-            if len(element.contents) < 2:  # Handle deleted article
+            if len(element.contents) < 2:
               continue
 
             title = element.text.strip('\n')     
@@ -2647,19 +2701,28 @@ class StockMonitor:
             for n in names:
 
               if n == name:
-                #print(f'  {k}/{symbol_des}: {title}')
                 link = 'https://www.ptt.cc' + element.contents[1]['href']
                 date = a.contents[5].contents[5].text
                 tag = f'👤(<a href="https://www.pttweb.cc/user/{n}" target="_blank" style="color:inherit;">{n}</a>)'
                 news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
           time.sleep(0.5)
+        else:
+          print(f"[WARN] PTT Author scrape failed (status={r.status_code}), falling back to RSS")
+          break
 
     except Exception as e:
-      print(f"[ERROR] PTT Author Error: {e}")
-      pass
+      print(f"[ERROR] PTT Author scrape error: {e}")
 
-    # print(f"[DEBUG] Found {len(news_list)} author articles.")      
+    # Fallback: RSS when scraping returned nothing
+    if not news_list and not scrape_ok:
+      print("[DEBUG] PTT Authors: using RSS fallback")
+      for entry in self._fetch_ptt_rss(board):
+        if entry['author'] in names:
+          n = entry['author']
+          tag = f'👤(<a href="https://www.pttweb.cc/user/{n}" target="_blank" style="color:inherit;">{n}</a>)'
+          news_list.append({"date": entry['date'], "title": entry['title'], "link": entry['link'], "tag": tag})
+
     return news_list
 
 
@@ -4330,8 +4393,10 @@ async function updateNotify() {
             <a href="${n.link}" target="_blank" class="news-link">${n.title}</a>
         </div>`;
       });
-      document.getElementById('news-container').innerHTML = newsHtml;
+    } else {
+      newsHtml = '<div class="text-center p-3 text-muted">暫無新聞</div>';
     }
+    document.getElementById('news-container').innerHTML = newsHtml;
 
     // ===== 新增：綁定 hover 事件 =====
     attachStockHoverEvents();
