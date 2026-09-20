@@ -2584,9 +2584,16 @@ class StockMonitor:
       return 0, s
 
 
-  def _fetch_ptt_api(self, board='Stock', pages=3):
+  def _fetch_ptt_api(self, board='Stock', pages=2):
     """Fetch articles from go-pttbbs REST API (works globally, returns structured JSON).
-    Returns list of (title, link, date, nrec, author) tuples matching _ptt_scrape_pages format."""
+    Cached for 60s to avoid redundant fetches across news, tickers, and authors."""
+    now = time.time()
+    if not hasattr(self, '_api_cache'):
+      self._api_cache = {}
+    cached = self._api_cache.get(board)
+    if cached and (now - cached['time'] < 60):
+      return cached['data']
+
     results = []
     next_idx = ''
 
@@ -2633,22 +2640,27 @@ class StockMonitor:
         break
 
     print(f"[DEBUG] PTT API fetched {len(results)} articles for {board}")
+    self._api_cache[board] = {'time': now, 'data': results}
     return results
 
 
   def get_ptt_news(self, keywords):
     news_list = []
+    scraped = self._ptt_scrape_pages('Stock', 5)
+    is_blocked = getattr(self, '_ptt_scrape_blocked', False)
 
-    for title, link, date, nrec, author in self._ptt_scrape_pages('Stock', 5):
-      matched = any(k in title for k in keywords)
-      nrec_val, nrec_display = self._parse_nrec(nrec)
-      is_hot = (nrec_val >= 20)
-      if matched or is_hot:
-        tag = f"🔥({nrec_display})" if is_hot else "👀"
-        news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+    if not is_blocked and scraped:
+      for title, link, date, nrec, author in scraped:
+        matched = any(k in title for k in keywords)
+        nrec_val, nrec_display = self._parse_nrec(nrec)
+        is_hot = (nrec_val >= 20)
+        if matched or is_hot:
+          tag = f"🔥({nrec_display})" if is_hot else "👀"
+          news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
-    # Fallback: go-pttbbs API when direct scraping is blocked
-    if not news_list:
+    # Fallback: go-pttbbs API when direct scraping is blocked or empty
+    if is_blocked or not news_list:
+      news_list = []
       print("[DEBUG] PTT News: using API fallback")
       for title, link, date, nrec, author in self._fetch_ptt_api('Stock'):
         matched = any(k in title for k in keywords)
@@ -2665,20 +2677,23 @@ class StockMonitor:
 
   def get_ptt_tickers(self, portfolio):
     news_list = []
-
     scraped = self._ptt_scrape_pages('Stock', 5)
-    for title, link, date, nrec, author in scraped:
-      for p in portfolio:
-        symbol = p['symbol']
-        symbol_des = (p['symbolName'].split(' '))[0]
-        idx = symbol.find('.')
-        ticker = symbol[:idx] if idx != -1 else symbol
-        if (ticker in title) or (symbol_des in title):
-          tag = f'💲(<a href="https://www.pttweb.cc/ptt-search#gsc.tab=0&gsc.q={ticker}&gsc.sort=date" target="_blank" style="color:inherit;">{ticker}</a>)'
-          news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+    is_blocked = getattr(self, '_ptt_scrape_blocked', False)
 
-    # Fallback: go-pttbbs API when direct scraping is blocked
-    if not news_list and not scraped:
+    if not is_blocked and scraped:
+      for title, link, date, nrec, author in scraped:
+        for p in portfolio:
+          symbol = p['symbol']
+          symbol_des = (p['symbolName'].split(' '))[0]
+          idx = symbol.find('.')
+          ticker = symbol[:idx] if idx != -1 else symbol
+          if (ticker in title) or (symbol_des in title):
+            tag = f'💲(<a href="https://www.pttweb.cc/ptt-search#gsc.tab=0&gsc.q={ticker}&gsc.sort=date" target="_blank" style="color:inherit;">{ticker}</a>)'
+            news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+
+    # Fallback: go-pttbbs API when direct scraping is blocked or empty
+    if is_blocked or not news_list:
+      news_list = []
       print("[DEBUG] PTT Tickers: using API fallback")
       for title, link, date, nrec, author in self._fetch_ptt_api('Stock'):
         for p in portfolio:
@@ -2697,15 +2712,18 @@ class StockMonitor:
   
   def get_ptt_authors(self, board, names):
     news_list = []
-
     scraped = self._ptt_scrape_pages(board, 10)
-    for title, link, date, nrec, author in scraped:
-      if author in names:
-        tag = f'👤(<a href="https://www.pttweb.cc/user/{author}" target="_blank" style="color:inherit;">{author}</a>)'
-        news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+    is_blocked = getattr(self, '_ptt_scrape_blocked', False)
 
-    # Fallback: go-pttbbs API when direct scraping is blocked
-    if not news_list and not scraped:
+    if not is_blocked and scraped:
+      for title, link, date, nrec, author in scraped:
+        if author in names:
+          tag = f'👤(<a href="https://www.pttweb.cc/user/{author}" target="_blank" style="color:inherit;">{author}</a>)'
+          news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+
+    # Fallback: go-pttbbs API when direct scraping is blocked or empty
+    if is_blocked or not news_list:
+      news_list = []
       print("[DEBUG] PTT Authors: using API fallback")
       for title, link, date, nrec, author in self._fetch_ptt_api(board):
         if author in names:
