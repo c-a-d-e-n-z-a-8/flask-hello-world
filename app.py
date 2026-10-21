@@ -10,7 +10,7 @@ from itertools import dropwhile
 from io import StringIO
 import re
 
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 import random
 
 from pyecharts.charts import Bar, Tab
@@ -1661,7 +1661,7 @@ SP500_DATA_URL = "https://www.slickcharts.com/sp500"
 NDX_CSV_URL = "https://raw.githubusercontent.com/Ate329/top-us-stock-tickers/main/tickers/top_100.csv"
 NDX_DATA_URL = "https://www.slickcharts.com/nasdaq100"
 
-INDEX_LIST =  ["^TWII", "^TWOII", "00631L.TW", "^GSPC", "^RUT", "^N225", "^KS11", "VOO", "QQQ", "QLD", "000300.SS"]
+INDEX_LIST =  ["^TWII", "^TWOII", "^GSPC", "^RUT", "^N225", "^KS11", "VOO", "QQQ", "000300.SS", "WTX&"]
 
 HEADERS_FUGLE = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -2442,6 +2442,8 @@ class StockMonitor:
 
   def ma_calculation(self, ticker):
     # print(f"[DEBUG] Calculating MA for {ticker[0]}...") # Optional trace
+    if '&' in ticker[0]:  # Futures (e.g. WTX&) have no query1 daily history
+      return [None]*9
     today = date.today()
     startDate = today - timedelta(days=365)
     endDate = today
@@ -2684,6 +2686,7 @@ class StockMonitor:
       for title, link, date, nrec, author in scraped:
         for p in portfolio:
           symbol = p['symbol']
+          if '&' in symbol or '=' in symbol: continue  # Skip futures/forex tokens (WTX&, EURUSD=X)
           symbol_des = (p['symbolName'].split(' '))[0]
           idx = symbol.find('.')
           ticker = symbol[:idx] if idx != -1 else symbol
@@ -2698,6 +2701,7 @@ class StockMonitor:
       for title, link, date, nrec, author in self._fetch_ptt_api('Stock'):
         for p in portfolio:
           symbol = p['symbol']
+          if '&' in symbol or '=' in symbol: continue  # Skip futures/forex tokens (WTX&, EURUSD=X)
           symbol_des = (p['symbolName'].split(' '))[0]
           idx = symbol.find('.')
           ticker = symbol[:idx] if idx != -1 else symbol
@@ -2844,6 +2848,9 @@ class StockMonitor:
 
 
   def get_fitx_data(self):
+    # Replaced by WTX& (台指期) via portfolio Yahoo query, see run_check()
+    return None
+    """
     try:
       url = "https://histock.tw/stock/module/function.aspx?m=stocktop2017&no=FITX"
       r = self.session.get(url, headers=self.headers, timeout=5)
@@ -2881,7 +2888,8 @@ class StockMonitor:
     except Exception as e:
       print(f"[ERROR] FITX Fetch Error: {e}")
     
-    return None  
+    return None
+    """
 
 
 
@@ -2920,7 +2928,8 @@ class StockMonitor:
     for c in range(0, len(self.portfolio), chunk_len):
       chunk = self.portfolio[c:c+chunk_len]
       tickers = [p[0] for p in chunk]
-      tickers_url = ','.join(tickers)
+      # Encode each ticker (& -> %26 for e.g. WTX&, ^ -> %5E); ',' separator stays raw
+      tickers_url = ','.join(quote(t, safe='') for t in tickers)
       url = yahoo_url + tickers_url
       
       # print(f"[DEBUG] Fetching chunk {c//chunk_len + 1} from Yahoo...") # Trace chunk
@@ -3020,11 +3029,11 @@ class StockMonitor:
         traceback.print_exc()
     
     # ==========================================
-    # [新增] 抓取台指期 (使用獨立 Function)
+    # 台指期改由 portfolio 的 WTX& 直接走 Yahoo 主流程 (get_fitx_data 已停用)
     # ==========================================
-    fitx_data = self.get_fitx_data()
-    if fitx_data:
-      rows.append(fitx_data)
+    #fitx_data = self.get_fitx_data()
+    #if fitx_data:
+    #  rows.append(fitx_data)
     
     #=== 定義輔助函數 ==
     def safe_parse_change(change_str):
@@ -4153,6 +4162,7 @@ function getYahooToTradingViewUrl(symbol) {
     '^TWII': 'TWSE:TAIEX',      // 加權指數
     '^TWOII': 'TPEX:TPEX',      // 櫃買指數
     'FITX': 'TAIFEX:TX1!',      // 台指期 (使用 TX1! 代表連續月)
+    'WTX&': 'TAIFEX:TX1!',     // 台指期 (portfolio 改用 WTX& symbol)
     '^GSPC': 'SP:SPX',          // S&P 500
     '^NDX': 'TVC:NDX',          // Nasdaq 100
     '^IXIC': 'TVC:IXIC',        // Nasdaq Composite
@@ -4208,6 +4218,7 @@ function getCommunityLink(symbol) {
     '^TWII': 'https://www.cmoney.tw/forum/market',      // 加權指數
     '^TWOII': 'https://www.cmoney.tw/forum/stock/TWC00',      // 櫃買指數
     'FITX': 'https://www.cmoney.tw/forum/futures/TXF1?s=p',      // 台指期
+    'WTX&': 'https://www.cmoney.tw/forum/futures/TXF1?s=p',     // 台指期 (portfolio 改用 WTX& symbol)
     '^GSPC': 'https://www.futunn.com/hk/index/.SPX-US/community',           // S&P 500
     '^IXIC': 'https://www.futunn.com/hk/index/.IXIC-US',        // Nasdaq Composite
     '^DJI': 'https://www.futunn.com/hk/index/.DJI-US',            // 道瓊
@@ -4467,6 +4478,7 @@ const CHART_URL_MAP = {
   '^TWII': 'https://stock.wearn.com/finance_chart.asp?stockid=IDXWT&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1',
   '^TWOII': 'https://stock.wearn.com/finance_chart.asp?stockid=IDXOT&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1',
   'FITX': 'https://stock.wearn.com/finance_chart.asp?stockid=WTX&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1', // 台指期
+  'WTX&': 'https://stock.wearn.com/finance_chart.asp?stockid=WTX&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1', // 台指期 (portfolio 改用 WTX& symbol)
 
   // === 美股期貨 (維持原本 Intraday 5分K) ===
   'ES=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@es&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // S&P 500 Futures
