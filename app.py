@@ -2384,20 +2384,20 @@ def fetch_ndx_heatmap_data():
 
 
 def fetch_heatmap_data():
-  """綜合抓取所有市場資料 (相容現有全域呼叫)"""
+  """綜合抓取所有市場資料 (美股已切換為 Finviz Widget，註解保留美股後端備用)"""
   fetch_tw_heatmap_data()
-  fetch_sp500_heatmap_data()
-  fetch_ndx_heatmap_data()
+  # fetch_sp500_heatmap_data()
+  # fetch_ndx_heatmap_data()
 
 
 
 
 def get_clean_dataframe(market):
   if market == "sp500":
-    fetch_sp500_heatmap_data()
+    # fetch_sp500_heatmap_data()
     df = DATA_CACHE.get("sp500")
   elif market == "ndx":
-    fetch_ndx_heatmap_data()
+    # fetch_ndx_heatmap_data()
     df = DATA_CACHE.get("ndx")
   elif market == "twse":
     fetch_tw_heatmap_data()
@@ -3527,8 +3527,11 @@ HTML_TEMPLATE = """
     <button class="btn btn-outline-dark" onclick="setMarket(this, 'twse', 'EQUITY')">上市個股</button>
     <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'INDEX')">上櫃指數</button>
     <button class="btn btn-outline-dark" onclick="setMarket(this, 'otc', 'EQUITY')">上櫃個股</button>
-    <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button>
-    <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button>
+    <!-- 原有 ECharts 美股按鈕 (註解保留備用) -->
+    <!-- <button class="btn btn-outline-dark" onclick="setMarket(this, 'sp500', 'EQUITY')">S&P 500</button> -->
+    <!-- <button class="btn btn-outline-dark" onclick="setMarket(this, 'ndx', 'EQUITY')">NASDAQ 100</button> -->
+    <button class="btn btn-outline-dark" onclick="showIframeView(this, 'iframe-sp500')">S&P 500</button>
+    <button class="btn btn-outline-dark" onclick="showIframeView(this, 'iframe-ndx')">NASDAQ 100</button>
     <button class="btn btn-outline-secondary" onclick="showPortfolioView(this)">Portfolio</button>
     <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-trend')">TW-Trend</button>
     <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-ratio')">TW-Ratio</button>
@@ -3619,6 +3622,13 @@ HTML_TEMPLATE = """
   <div class="col-lg-8">
     <div id="chart-container"></div>
     <div id="portfolio-grid"></div>
+
+    <div id="iframe-sp500" class="iframe-view">
+      <iframe data-src="https://finviz.com/widgets/map?t=sec&st=d1&theme=light&wid=hnol0sww" loading="lazy"></iframe>
+    </div>
+    <div id="iframe-ndx" class="iframe-view">
+      <iframe data-src="https://finviz.com/widgets/map?t=sec_ndx&st=d1&theme=light&wid=hnol0sww" loading="lazy"></iframe>
+    </div>
 
     <div id="iframe-tw-trend" class="iframe-view">
       <iframe data-src="https://c-a-d-e-n-z-a.github.io/webpage/group_trend.html" loading="lazy"></iframe>
@@ -4962,9 +4972,9 @@ def api_reset():
 
 
 
-# Initial S&P500 and Nas-100 sectors
-init_sp500_sectors()
-init_ndx_subsectors() 
+# Initial S&P500 and Nas-100 sectors (改用 Finviz Widget，註解保留備用)
+# init_sp500_sectors()
+# init_ndx_subsectors() 
 
 
 
