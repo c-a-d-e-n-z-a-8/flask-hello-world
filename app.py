@@ -3307,7 +3307,7 @@ HTML_TEMPLATE = """
   .pf-symbol { font-weight: bold; font-size: 13px; color: #222; }
   .pf-name { font-size: 10px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; margin-bottom: 2px; }
   .pf-price { font-size: 13px; font-weight: bold; }
-  .pf-chart-title { font-size: 10px; color: #666; margin-bottom: 2px; }
+  .pf-chart-title { font-size: 10px; color: #666; margin-bottom: 2px; word-break: keep-all; }
   .pf-chart-area {
     width: 100%;
     height: 90px;
@@ -3723,7 +3723,7 @@ async function loadPortfolioSparklines() {
             <span class="pf-price" style="${colorStyle}">${row.price}</span>
           </div>
           <div class="pf-name">${row.name}</div>
-          <div id="${safeId}_title" class="pf-chart-title">即時走勢</div>
+          <div id="${safeId}_title" class="pf-chart-title">&nbsp;</div>
           <div id="${safeId}" class="pf-chart-area"><span style="color:#999;font-size:11px;">Loading...</span></div>
         </div>`;
     });
@@ -3781,19 +3781,53 @@ function _drawSparklineSVG(containerId, chartData) {
       }
     }
 
+    const quotes = chartData.indicators?.quote?.[0] || {};
+    const opens = quotes.open || [];
+    const highs = quotes.high || [];
+    const lows = quotes.low || [];
+
+    let openPrice = null;
+    let highPrice = null;
+    let lowPrice = null;
+
     const points = [];
     for (let i = 0; i < timestamps.length; i++) {
       const t = timestamps[i];
       const p = closes[i];
-      if (p !== null && p !== undefined && t >= minT && t <= maxT) {
-        points.push({ t: t, p: p });
+      if (t >= minT && t <= maxT) {
+        if (opens[i] !== null && opens[i] !== undefined && openPrice === null) {
+          openPrice = opens[i];
+        }
+        if (highs[i] !== null && highs[i] !== undefined) {
+          if (highPrice === null || highs[i] > highPrice) highPrice = highs[i];
+        }
+        if (lows[i] !== null && lows[i] !== undefined) {
+          if (lowPrice === null || lows[i] < lowPrice) lowPrice = lows[i];
+        }
+        if (p !== null && p !== undefined) {
+          points.push({ t: t, p: p });
+          if (openPrice === null) openPrice = p;
+          if (highPrice === null || p > highPrice) highPrice = p;
+          if (lowPrice === null || p < lowPrice) lowPrice = p;
+        }
       }
     }
 
+    const isPortfolio = containerId.startsWith('pf_');
+    const titleEl = document.getElementById(containerId + '_title');
+
     if (points.length === 0) {
+      if (isPortfolio && titleEl && prevClose) {
+        const precision = prevClose < 1 ? 4 : 2;
+        titleEl.innerHTML = `<span style="color:#888;">昨:${Number(prevClose).toFixed(precision)}</span>`;
+      }
       container.innerHTML = '<span style="color:#ccc;font-size:12px;">等待開盤</span>';
       return;
     }
+
+    if (openPrice === null && meta.regularMarketOpen) openPrice = meta.regularMarketOpen;
+    if (highPrice === null && meta.regularMarketDayHigh) highPrice = meta.regularMarketDayHigh;
+    if (lowPrice === null && meta.regularMarketDayLow) lowPrice = meta.regularMarketDayLow;
 
     let minP, maxP;
     const hasLimitPrice = (limitUp && limitUp !== '-' && limitDown && limitDown !== '-');
@@ -3834,11 +3868,23 @@ function _drawSparklineSVG(containerId, chartData) {
     const precision = lastPrice < 1 ? 4 : 2;
     const chgPct = refPrice ? ((lastPrice - refPrice) / refPrice * 100) : 0;
     const chgSign = chgPct >= 0 ? '+' : '';
-    const prevCloseStr = prevClose ? prevClose.toFixed(precision) : 'N/A';
-    const titleEl = document.getElementById(containerId + '_title');
+    const fmtP = (v) => (v !== null && v !== undefined && !isNaN(v)) ? Number(v).toFixed(precision) : '-';
+
+    const curStr = fmtP(lastPrice);
+    const prevCloseStr = prevClose ? Number(prevClose).toFixed(precision) : 'N/A';
+    const openStr = fmtP(openPrice);
+    const highStr = fmtP(highPrice);
+    const lowStr = fmtP(lowPrice);
+
     if (titleEl) {
-      const infoSpan = `<span style="font-weight:normal; color:${color};">&nbsp;(現 ${lastPrice.toFixed(precision)} / 昨 ${prevCloseStr} / ${chgSign}${chgPct.toFixed(2)}%)</span>`;
-      titleEl.innerHTML = titleEl.textContent.trim() + infoSpan;
+      if (isPortfolio) {
+        const text = `現:${curStr} 昨:${prevCloseStr} 開:${openStr} 高:${highStr} 低:${lowStr} ${chgSign}${chgPct.toFixed(2)}%`;
+        titleEl.title = text;
+        titleEl.innerHTML = `<span style="color:${color};">${text}</span>`;
+      } else {
+        const infoSpan = `<span style="font-weight:normal; color:${color};">&nbsp;(現 ${curStr} / 昨 ${prevCloseStr} / ${chgSign}${chgPct.toFixed(2)}%)</span>`;
+        titleEl.innerHTML = titleEl.textContent.trim() + infoSpan;
+      }
     }
 
     container.innerHTML = `
