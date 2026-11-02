@@ -3535,6 +3535,7 @@ HTML_TEMPLATE = """
     <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-breath')">TW-Breath</button>
     <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-today')">TW-Today</button>
     <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-tw-market')">TW-Market</button>
+    <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-ptt')">PTT</button>
     <button class="btn btn-outline-secondary" onclick="showIframeView(this, 'iframe-buzzing')">Buzzing</button>
   </div>
   <div class="o-ribbon-sep"></div>
@@ -3633,6 +3634,9 @@ HTML_TEMPLATE = """
     </div>
     <div id="iframe-tw-market" class="iframe-view">
       <iframe data-src="https://ai.finlab.tw/tw_market/" loading="lazy"></iframe>
+    </div>
+    <div id="iframe-ptt" class="iframe-view">
+      <iframe data-src="https://www.ptt.cc/bbs/Stock/index.html" loading="lazy"></iframe>
     </div>
     <div id="iframe-buzzing" class="iframe-view">
       <iframe data-src="https://www.buzzing.cc/" loading="lazy"></iframe>
