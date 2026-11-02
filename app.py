@@ -1689,8 +1689,29 @@ NDX_SUBSECTOR_CACHE = {}
 
 PTT_AUTHORS = ["sky22485816", "a000000000", "waitrop", "zmcx16", "Robertshih", "Test520", "zesonpso", "MrChen", "phcebus", "f204137", "a0808996", "IBIZA", "leo15824", "tosay", "LDPC", "nina801105", "mrp", "minazukimaya", "liliumeow", "onekoni"]
 
-DATA_CACHE = {"twse": None, "otc": None, "last_update": 0}
+DATA_CACHE = {
+  "twse": None,
+  "otc": None,
+  "sp500": None,
+  "ndx": None,
+  "last_update_tw": 0,
+  "last_update_sp500": 0,
+  "last_update_ndx": 0,
+  "last_update": 0,
+}
 CACHE_DURATION = 300
+
+# 美股代碼轉換對照 (Yahoo Finance 專用符號相容)
+US_TICKER_YAHOO_MAP = {
+  "BRK.B": "BRK-B",
+  "BRK/B": "BRK-B",
+  "BRK/A": "BRK-A",
+  "BF.B": "BF-B",
+}
+
+YAHOO_SESSION = None
+YAHOO_CRUMB = None
+YAHOO_CRUMB_TIME = 0
 
 
 
@@ -2115,30 +2136,65 @@ def fetch_heatmap_data():
 '''
 
 
-def fetch_us_yahoo_quotes(symbols):
-  """Batch fetch quotes from Yahoo Finance API. Uses session + crumb for auth."""
-  if not symbols:
-    return {}
-  result = {}
+
+
+def to_yahoo_us_ticker(sym: str) -> str:
+  """將標準股票代碼轉換為 Yahoo Finance 支援的代碼格式 (如 BRK.B -> BRK-B)"""
+  s = str(sym).strip()
+  if s in US_TICKER_YAHOO_MAP:
+    return US_TICKER_YAHOO_MAP[s]
+  return s.replace("/", "-").replace(".", "-")
+
+
+
+
+def get_yahoo_session_and_crumb(force_refresh=False):
+  """取得或複用 Yahoo Finance 的 session 與 crumb (有效期限 1 小時，避免開盤頻繁要求被 429)"""
+  global YAHOO_SESSION, YAHOO_CRUMB, YAHOO_CRUMB_TIME
+  now = time.time()
+  if not force_refresh and YAHOO_SESSION and YAHOO_CRUMB and (now - YAHOO_CRUMB_TIME < 3600):
+    return YAHOO_SESSION, YAHOO_CRUMB
+
   try:
     session = requests.Session(impersonate="chrome120")
-    # Step 1: visit a Yahoo Finance stock page to get proper session cookies
-    # (visiting just the homepage doesn't set the right auth cookies)
     session.get("https://finance.yahoo.com/quote/AAPL/", timeout=10)
-    # Step 2: get crumb token
     crumb_r = session.get("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=10)
     crumb = crumb_r.text.strip()
-    if not crumb or "<" in crumb or "Too Many" in crumb:
+    if crumb and "<" not in crumb and "Too Many" not in crumb:
+      YAHOO_SESSION = session
+      YAHOO_CRUMB = crumb
+      YAHOO_CRUMB_TIME = now
+      print(f"[DEBUG] Yahoo Finance crumb refreshed: {crumb}")
+      return YAHOO_SESSION, YAHOO_CRUMB
+    else:
       print(f"[WARN] Yahoo Finance crumb fetch failed: {crumb_r.status_code} {crumb[:80]}")
-      return {}
-    print(f"[DEBUG] Yahoo Finance crumb: {crumb}")
   except Exception as e:
-    print(f"[ERROR] fetch_us_yahoo_quotes session/crumb error: {e}")
+    print(f"[ERROR] get_yahoo_session_and_crumb error: {e}")
+
+  if YAHOO_SESSION and YAHOO_CRUMB:
+    return YAHOO_SESSION, YAHOO_CRUMB
+  return None, None
+
+
+
+
+def fetch_us_yahoo_quotes(symbols):
+  """批次從 Yahoo Finance API 取得美股即時報價，具備 Session 複用、代碼映射與 429 自動重試"""
+  if not symbols:
     return {}
 
+  session, crumb = get_yahoo_session_and_crumb()
+  if not session or not crumb:
+    print("[WARN] Unable to fetch Yahoo quotes: no valid session or crumb")
+    return {}
+
+  sym_map = {to_yahoo_us_ticker(s): s for s in symbols}
+  yahoo_symbols = list(sym_map.keys())
+
+  result = {}
   BATCH = 200
-  for i in range(0, len(symbols), BATCH):
-    batch = symbols[i:i+BATCH]
+  for i in range(0, len(yahoo_symbols), BATCH):
+    batch = yahoo_symbols[i:i+BATCH]
     try:
       url = "https://query2.finance.yahoo.com/v7/finance/quote"
       params = {
@@ -2150,149 +2206,204 @@ def fetch_us_yahoo_quotes(symbols):
       if r.status_code == 200:
         data = r.json()
         for quote in data.get("quoteResponse", {}).get("result", []):
-          sym = quote.get("symbol")
-          if sym:
-            result[sym] = quote
+          y_sym = quote.get("symbol")
+          if y_sym:
+            orig_sym = sym_map.get(y_sym, y_sym)
+            result[orig_sym] = quote
+            result[y_sym] = quote
+      elif r.status_code in (401, 403, 429):
+        print(f"[WARN] Yahoo quote batch {i//BATCH+1} got {r.status_code}, refreshing crumb...")
+        session, crumb = get_yahoo_session_and_crumb(force_refresh=True)
+        if session and crumb:
+          params["crumb"] = crumb
+          retry_r = session.get(url, params=params, timeout=15)
+          if retry_r.status_code == 200:
+            data = retry_r.json()
+            for quote in data.get("quoteResponse", {}).get("result", []):
+              y_sym = quote.get("symbol")
+              if y_sym:
+                orig_sym = sym_map.get(y_sym, y_sym)
+                result[orig_sym] = quote
+                result[y_sym] = quote
       else:
         print(f"[WARN] Yahoo Finance quote batch {i//BATCH+1} failed: {r.status_code} {r.text[:200]}")
     except Exception as e:
       print(f"[ERROR] fetch_us_yahoo_quotes batch {i//BATCH+1} error: {e}")
+
   print(f"[DEBUG] fetch_us_yahoo_quotes: got {len(result)} quotes for {len(symbols)} symbols")
   return result
 
 
-def fetch_heatmap_data():
+
+
+def fetch_tw_heatmap_data():
+  """抓取台股 (TWSE / OTC) 熱力圖資料並更新快取"""
   now = time.time()
-  if (DATA_CACHE["twse"] is None) or (now - DATA_CACHE["last_update"] > CACHE_DURATION):
-    try:
-      print(f"[{time.ctime()}] [DEBUG] Starting Heatmap Update...")
+  if (DATA_CACHE["twse"] is not None) and (now - DATA_CACHE.get("last_update_tw", 0) <= CACHE_DURATION):
+    return
 
-      # === 台股資料 (原有邏輯，不變) ===
-      r_twse = requests.get(TWSE_URL, headers=HEADERS_FUGLE, timeout=15)
-      r_otc = requests.get(OTC_URL, headers=HEADERS_FUGLE, timeout=15)
+  try:
+    print(f"[{time.ctime()}] [DEBUG] Starting TWSE/OTC Heatmap Update...")
+    r_twse = requests.get(TWSE_URL, headers=HEADERS_FUGLE, timeout=15)
+    r_otc = requests.get(OTC_URL, headers=HEADERS_FUGLE, timeout=15)
+    print(f"[DEBUG] Fugle Response - TWSE: {r_twse.status_code}, OTC: {r_otc.status_code}")
 
-      print(f"[DEBUG] Fugle Response - TWSE: {r_twse.status_code}, OTC: {r_otc.status_code}")
+    if r_twse.status_code == 200:
+      data_twse = r_twse.json().get("data", [])
+      DATA_CACHE["twse"] = pd.DataFrame(data_twse)
+      print(f"[DEBUG] TWSE Data loaded: {len(data_twse)} rows")
 
-      if r_twse.status_code == 200:
-        data_twse = r_twse.json().get("data", [])
-        DATA_CACHE["twse"] = pd.DataFrame(data_twse)
-        print(f"[DEBUG] TWSE Data loaded: {len(data_twse)} rows")
+    if r_otc.status_code == 200:
+      data_otc = r_otc.json().get("data", [])
+      DATA_CACHE["otc"] = pd.DataFrame(data_otc)
+      print(f"[DEBUG] OTC Data loaded: {len(data_otc)} rows")
 
-      if r_otc.status_code == 200:
-        data_otc = r_otc.json().get("data", [])
-        DATA_CACHE["otc"] = pd.DataFrame(data_otc)
-        print(f"[DEBUG] OTC Data loaded: {len(data_otc)} rows")
+    DATA_CACHE["last_update_tw"] = now
+    DATA_CACHE["last_update"] = now
+  except Exception as e:
+    print(f"[ERROR] Fetching TWSE/OTC data failed: {e}")
+    traceback.print_exc()
 
-      # === S&P 500 資料 (via Yahoo Finance quote API) ===
-      print("[DEBUG] Fetching S&P 500 data from Yahoo Finance...")
-      try:
-        if not GICS_SECTOR_CACHE:
-          init_sp500_sectors()
-        sp500_symbols = list(GICS_SECTOR_CACHE.keys())
-        if sp500_symbols:
-          quotes = fetch_us_yahoo_quotes(sp500_symbols)
-          total_mc = sum((q.get("marketCap") or 0) for q in quotes.values())
-          total_tv = sum(((q.get("regularMarketVolume") or 0) * (q.get("regularMarketPrice") or 0)) for q in quotes.values())
-          rows = []
-          for sym in sp500_symbols:
-            q = quotes.get(sym)
-            if not q:
-              continue
-            mc = q.get("marketCap") or 0
-            price = q.get("regularMarketPrice") or 0
-            vol = q.get("regularMarketVolume") or 0
-            tv = price * vol
-            rows.append({
-              "symbol": sym,
-              "name": q.get("shortName", sym),
-              "closePrice": price,
-              "openPrice": q.get("regularMarketOpen") or price,
-              "highPrice": q.get("regularMarketDayHigh") or price,
-              "lowPrice": q.get("regularMarketDayLow") or price,
-              "tradeVolume": vol,
-              "tradeValue": tv,
-              "change": q.get("regularMarketChange") or 0,
-              "changePercent": q.get("regularMarketChangePercent") or 0,
-              "marketCapWeight": (mc / total_mc * 100) if total_mc > 0 else 0,
-              "tradeValueWeight": (tv / total_tv * 100) if total_tv > 0 else 0,
-              "industry": industry_label_us(sym),
-              "type": "EQUITY"
-            })
-          if rows:
-            DATA_CACHE["sp500"] = pd.DataFrame(rows)
-            print(f"[DEBUG] S&P 500 Data loaded: {len(rows)} rows")
-          else:
-            print("[WARN] No S&P 500 data returned from Yahoo Finance")
-        else:
-          print("[WARN] GICS_SECTOR_CACHE empty, skipping S&P 500")
-      except Exception as e:
-        print(f"[ERROR] S&P 500 Yahoo Finance fetch error: {e}")
-        traceback.print_exc()
 
-      # === Nasdaq 100 資料 (via Yahoo Finance quote API) ===
-      print("[DEBUG] Fetching Nasdaq 100 data from Yahoo Finance...")
-      try:
-        if not NDX_SUBSECTOR_CACHE:
-          init_ndx_subsectors()
-        ndx_symbols = list(NDX_SUBSECTOR_CACHE.keys())
-        if ndx_symbols:
-          quotes = fetch_us_yahoo_quotes(ndx_symbols)
-          total_mc = sum((q.get("marketCap") or 0) for q in quotes.values())
-          total_tv = sum(((q.get("regularMarketVolume") or 0) * (q.get("regularMarketPrice") or 0)) for q in quotes.values())
-          rows = []
-          for sym in ndx_symbols:
-            q = quotes.get(sym)
-            if not q:
-              continue
-            mc = q.get("marketCap") or 0
-            price = q.get("regularMarketPrice") or 0
-            vol = q.get("regularMarketVolume") or 0
-            tv = price * vol
-            rows.append({
-              "symbol": sym,
-              "name": q.get("shortName", sym),
-              "closePrice": price,
-              "openPrice": q.get("regularMarketOpen") or price,
-              "highPrice": q.get("regularMarketDayHigh") or price,
-              "lowPrice": q.get("regularMarketDayLow") or price,
-              "tradeVolume": vol,
-              "tradeValue": tv,
-              "change": q.get("regularMarketChange") or 0,
-              "changePercent": q.get("regularMarketChangePercent") or 0,
-              "marketCapWeight": (mc / total_mc * 100) if total_mc > 0 else 0,
-              "tradeValueWeight": (tv / total_tv * 100) if total_tv > 0 else 0,
-              "industry": industry_label_ndx(sym),
-              "type": "EQUITY"
-            })
-          if rows:
-            DATA_CACHE["ndx"] = pd.DataFrame(rows)
-            print(f"[DEBUG] Nasdaq 100 Data loaded: {len(rows)} rows")
-          else:
-            print("[WARN] No NDX data returned from Yahoo Finance")
-        else:
-          print("[WARN] NDX_SUBSECTOR_CACHE empty, skipping Nasdaq 100")
-      except Exception as e:
-        print(f"[ERROR] NDX Yahoo Finance fetch error: {e}")
-        traceback.print_exc()
 
-      DATA_CACHE["last_update"] = now
-      print(f"[{time.ctime()}] [DEBUG] Heatmap Cache Updated.")
 
-    except Exception as e:
-      print(f"[ERROR] Fetching heatmap data failed: {e}")
-      traceback.print_exc()
+def fetch_sp500_heatmap_data():
+  """抓取 S&P 500 熱力圖資料並更新快取 (獨立快取，具備舊資料保留防呆)"""
+  now = time.time()
+  if (DATA_CACHE.get("sp500") is not None) and (now - DATA_CACHE.get("last_update_sp500", 0) <= CACHE_DURATION):
+    return
+
+  print("[DEBUG] Fetching S&P 500 data from Yahoo Finance...")
+  try:
+    if not GICS_SECTOR_CACHE:
+      init_sp500_sectors()
+    sp500_symbols = list(GICS_SECTOR_CACHE.keys())
+    if sp500_symbols:
+      quotes = fetch_us_yahoo_quotes(sp500_symbols)
+      total_mc = sum((q.get("marketCap") or 0) for q in quotes.values())
+      total_tv = sum(((q.get("regularMarketVolume") or 0) * (q.get("regularMarketPrice") or 0)) for q in quotes.values())
+      rows = []
+      for sym in sp500_symbols:
+        q = quotes.get(sym) or quotes.get(to_yahoo_us_ticker(sym))
+        if not q:
+          continue
+        mc = q.get("marketCap") or 0
+        price = q.get("regularMarketPrice") or 0
+        vol = q.get("regularMarketVolume") or 0
+        tv = price * vol
+        rows.append({
+          "symbol": sym,
+          "name": q.get("shortName", sym),
+          "closePrice": price,
+          "openPrice": q.get("regularMarketOpen") or price,
+          "highPrice": q.get("regularMarketDayHigh") or price,
+          "lowPrice": q.get("regularMarketDayLow") or price,
+          "tradeVolume": vol,
+          "tradeValue": tv,
+          "change": q.get("regularMarketChange") or 0,
+          "changePercent": q.get("regularMarketChangePercent") or 0,
+          "marketCapWeight": (mc / total_mc * 100) if total_mc > 0 else 0,
+          "tradeValueWeight": (tv / total_tv * 100) if total_tv > 0 else 0,
+          "industry": industry_label_us(sym),
+          "type": "EQUITY"
+        })
+      if rows:
+        DATA_CACHE["sp500"] = pd.DataFrame(rows)
+        DATA_CACHE["last_update_sp500"] = now
+        DATA_CACHE["last_update"] = now
+        print(f"[DEBUG] S&P 500 Data loaded: {len(rows)} rows")
+      else:
+        print("[WARN] No S&P 500 data returned from Yahoo Finance, keeping existing cache")
+        DATA_CACHE["last_update_sp500"] = now - CACHE_DURATION + 20
+    else:
+      print("[WARN] GICS_SECTOR_CACHE empty, skipping S&P 500")
+  except Exception as e:
+    print(f"[ERROR] S&P 500 Yahoo Finance fetch error: {e}")
+    traceback.print_exc()
+    DATA_CACHE["last_update_sp500"] = now - CACHE_DURATION + 20
+
+
+
+
+def fetch_ndx_heatmap_data():
+  """抓取 Nasdaq 100 熱力圖資料並更新快取 (獨立快取，具備舊資料保留防呆)"""
+  now = time.time()
+  if (DATA_CACHE.get("ndx") is not None) and (now - DATA_CACHE.get("last_update_ndx", 0) <= CACHE_DURATION):
+    return
+
+  print("[DEBUG] Fetching Nasdaq 100 data from Yahoo Finance...")
+  try:
+    if not NDX_SUBSECTOR_CACHE:
+      init_ndx_subsectors()
+    ndx_symbols = list(NDX_SUBSECTOR_CACHE.keys())
+    if ndx_symbols:
+      quotes = fetch_us_yahoo_quotes(ndx_symbols)
+      total_mc = sum((q.get("marketCap") or 0) for q in quotes.values())
+      total_tv = sum(((q.get("regularMarketVolume") or 0) * (q.get("regularMarketPrice") or 0)) for q in quotes.values())
+      rows = []
+      for sym in ndx_symbols:
+        q = quotes.get(sym) or quotes.get(to_yahoo_us_ticker(sym))
+        if not q:
+          continue
+        mc = q.get("marketCap") or 0
+        price = q.get("regularMarketPrice") or 0
+        vol = q.get("regularMarketVolume") or 0
+        tv = price * vol
+        rows.append({
+          "symbol": sym,
+          "name": q.get("shortName", sym),
+          "closePrice": price,
+          "openPrice": q.get("regularMarketOpen") or price,
+          "highPrice": q.get("regularMarketDayHigh") or price,
+          "lowPrice": q.get("regularMarketDayLow") or price,
+          "tradeVolume": vol,
+          "tradeValue": tv,
+          "change": q.get("regularMarketChange") or 0,
+          "changePercent": q.get("regularMarketChangePercent") or 0,
+          "marketCapWeight": (mc / total_mc * 100) if total_mc > 0 else 0,
+          "tradeValueWeight": (tv / total_tv * 100) if total_tv > 0 else 0,
+          "industry": industry_label_ndx(sym),
+          "type": "EQUITY"
+        })
+      if rows:
+        DATA_CACHE["ndx"] = pd.DataFrame(rows)
+        DATA_CACHE["last_update_ndx"] = now
+        DATA_CACHE["last_update"] = now
+        print(f"[DEBUG] Nasdaq 100 Data loaded: {len(rows)} rows")
+      else:
+        print("[WARN] No NDX data returned from Yahoo Finance, keeping existing cache")
+        DATA_CACHE["last_update_ndx"] = now - CACHE_DURATION + 20
+    else:
+      print("[WARN] NDX_SUBSECTOR_CACHE empty, skipping Nasdaq 100")
+  except Exception as e:
+    print(f"[ERROR] NDX Yahoo Finance fetch error: {e}")
+    traceback.print_exc()
+    DATA_CACHE["last_update_ndx"] = now - CACHE_DURATION + 20
+
+
+
+
+def fetch_heatmap_data():
+  """綜合抓取所有市場資料 (相容現有全域呼叫)"""
+  fetch_tw_heatmap_data()
+  fetch_sp500_heatmap_data()
+  fetch_ndx_heatmap_data()
+
+
 
 
 def get_clean_dataframe(market):
-  fetch_heatmap_data()
-  
   if market == "sp500":
+    fetch_sp500_heatmap_data()
     df = DATA_CACHE.get("sp500")
   elif market == "ndx":
+    fetch_ndx_heatmap_data()
     df = DATA_CACHE.get("ndx")
   elif market == "twse":
+    fetch_tw_heatmap_data()
     df = DATA_CACHE.get("twse")
   else:
+    fetch_tw_heatmap_data()
     df = DATA_CACHE.get("otc")
   
   if df is None or df.empty:
@@ -2318,19 +2429,29 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
   is_us_market = "marketCapWeight" in data.columns
 
   if is_us_market:
-    size_col = "marketCapWeight" if area_metric == "marketValueWeight" else "tradeValueWeight"
+    if area_metric == "marketValueWeight":
+      data["size_val"] = pd.to_numeric(data.get("marketCapWeight"), errors="coerce").fillna(0)
+    else:
+      # 成交值權重 (tradeValueWeight)
+      tv_weight = pd.to_numeric(data.get("tradeValueWeight"), errors="coerce").fillna(0)
+      mc_weight = pd.to_numeric(data.get("marketCapWeight"), errors="coerce").fillna(0)
+      # 若剛開盤成交量歸零或成交值總和為 0，自動以市值權重為備援，避免全部被濾除
+      if tv_weight.sum() <= 0:
+        data["size_val"] = mc_weight
+      else:
+        # 單檔股票若尚未有成交量，賦予微小權重以保持顯示，不從圖表中消失
+        data["size_val"] = np.where(tv_weight > 0, tv_weight, mc_weight * 0.05)
   else:
     # 台股邏輯 (維持不變)
     size_col = "tradeValue"
     if type_filter == "EQUITY":
       size_col = "marketValueWeight" if area_metric == "marketValueWeight" else "tradeValueWeight"
 
-  # 數值轉換
-  raw_size = data.get(size_col, pd.Series([0]*len(data)))
-  if raw_size.dtype == 'object':
-    raw_size = raw_size.astype(str).str.replace(',', '')
-  
-  data["size_val"] = pd.to_numeric(raw_size, errors="coerce").fillna(0)
+    raw_size = data.get(size_col, pd.Series([0]*len(data)))
+    if raw_size.dtype == 'object':
+      raw_size = raw_size.astype(str).str.replace(',', '')
+    data["size_val"] = pd.to_numeric(raw_size, errors="coerce").fillna(0)
+
   data["chg_pct"] = pd.to_numeric(data.get("changePercent"), errors="coerce").fillna(0)
   data["price"] = pd.to_numeric(data.get("closePrice"), errors="coerce").fillna(0)
   
@@ -4029,7 +4150,7 @@ function labelFormatterIndex(params) {
   if (Array.isArray(params.value)) {
   var price = params.value[2] ? params.value[2].toFixed(2) : '0.00';
   var chg = params.value[1] ? params.value[1].toFixed(2) + '%' : '0.00%';
-  return params.name + '\\n' + price + ' | ' + chg;f
+  return params.name + '\\n' + price + ' | ' + chg;
   }
   return params.name;
 }
