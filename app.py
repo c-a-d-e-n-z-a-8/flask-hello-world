@@ -36,6 +36,7 @@ si_url = os.environ.get('SI_URL')
 tw_sf_url = os.environ.get('TW_SF_URL')
 portfolio_url = os.environ.get('PORTFOLIO_URL')
 yahoo_url = os.environ.get('YAHOO_URL')
+fl_url = os.environ.get('FL_URL')
 ptt_proxy = os.environ.get('PTT_PROXY')  # Optional: e.g. socks5://user:pass@host:port
 
 use_ollama = False
@@ -5244,7 +5245,9 @@ function openPfStockModal(rawSymbol, stockName, cardPrice, cardChange) {
   if (pfStockCache[cacheKey]) {
     renderPfStockData(pfStockCache[cacheKey], isUS, symStr);
   } else {
-    var r2Url = "https://r2.finlab.finance/td-stock-panel/" + (isUS ? "us/" : "tw/") + encodeURIComponent(cleanId) + ".json";
+    var r2Base = """ + json.dumps(fl_url) + """;
+    if (r2Base && !r2Base.endsWith("/")) r2Base += "/";
+    var r2Url = r2Base + (isUS ? "us/" : "tw/") + encodeURIComponent(cleanId) + ".json";
     fetch(r2Url)
       .then(function(r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
