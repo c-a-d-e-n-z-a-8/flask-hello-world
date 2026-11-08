@@ -3673,6 +3673,8 @@ HTML_TEMPLATE = """
   .o-search svg { margin-right:8px; flex:none; }
   .o-search input { flex:1; min-width:0; border:none; outline:none; background:transparent; font-size:14px; color:var(--o-text); font-family:inherit; }
   .o-search input::placeholder { color:var(--o-text-sub); }
+  .o-search-clear { display:none; align-items:center; justify-content:center; width:20px; height:20px; margin-left:4px; border:none; border-radius:50%; background:transparent; color:var(--o-text-sub); font-size:13px; line-height:1; cursor:pointer; flex:none; padding:0; }
+  .o-search-clear:hover { background:var(--o-hover); color:var(--o-text); }
   .o-topbar-right { display:flex; align-items:center; gap:2px; margin-left:auto; flex:none; }
   .o-iconbtn { width:40px; height:48px; border:none; background:transparent; color:#fff; cursor:pointer; font-size:16px; display:grid; place-items:center; }
   .o-iconbtn:hover { background:rgba(255,255,255,.12); }
@@ -3707,6 +3709,7 @@ HTML_TEMPLATE = """
       <circle cx="7" cy="7" r="5"/><line x1="11" y1="11" x2="15" y2="15"/>
     </svg>
     <input id="inbox-search" type="text" placeholder="搜尋股票代碼 / 名稱 / 新聞" oninput="applyInboxFilter()" autocomplete="off">
+    <button id="inbox-search-clear" type="button" class="o-search-clear" onclick="clearInboxSearch()" title="清除搜尋">✕</button>
   </div>
   <div class="o-topbar-right">
     <button class="o-iconbtn" title="通知">🔔</button>
@@ -3898,13 +3901,27 @@ function switchInboxTab(tab) {
 // 頂部搜尋：即時過濾 Monitor 清單與 PTT/新聞 (雙欄同步)
 function applyInboxFilter() {
   const input = document.getElementById('inbox-search');
-  const q = (input ? input.value : '').trim().toLowerCase();
+  const clearBtn = document.getElementById('inbox-search-clear');
+  const rawVal = input ? input.value : '';
+  if (clearBtn) {
+    clearBtn.style.display = rawVal.length > 0 ? 'inline-flex' : 'none';
+  }
+  const q = rawVal.trim().toLowerCase();
   document.querySelectorAll('#stock-table-body > tr').forEach(tr => {
     tr.style.display = (!q || tr.textContent.toLowerCase().includes(q)) ? '' : 'none';
   });
   document.querySelectorAll('#news-container > .news-item').forEach(item => {
     item.style.display = (!q || item.textContent.toLowerCase().includes(q)) ? '' : 'none';
   });
+}
+
+function clearInboxSearch() {
+  const input = document.getElementById('inbox-search');
+  if (input) {
+    input.value = '';
+    applyInboxFilter();
+    input.focus();
+  }
 }
 
 // 隱藏看盤 (boss key)：右側切換成模擬 email 清單，再按一次還原
