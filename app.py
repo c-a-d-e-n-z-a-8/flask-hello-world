@@ -2645,12 +2645,21 @@ class StockMonitor:
     return requests.get(url, **kwargs)
 
 
-  def _ptt_scrape_pages(self, board='Stock', pages=5):
-    """Scrape PTT board pages. Returns list of (title, link, date, nrec, author) tuples.
+  def _ptt_scrape_pages(self, board='Stock', pages=10):
+    """Tier 1: Scrape official PTT (www.ptt.cc) board pages (~200 articles at 10 pages * 20/page).
+    Returns list of (title, link, date, nrec, author) tuples.
     Sets self._ptt_scrape_blocked = True on failure so subsequent calls skip immediately."""
     results = []
     if getattr(self, '_ptt_scrape_blocked', False):
       return results
+
+    now = time.time()
+    if not hasattr(self, '_ptt_cc_cache'):
+      self._ptt_cc_cache = {}
+    cache_key = (board, pages)
+    cached = self._ptt_cc_cache.get(cache_key)
+    if cached and (now - cached['time'] < 60):
+      return cached['data']
 
     url = f'https://www.ptt.cc/bbs/{board}/index.html'
     try:
@@ -2690,6 +2699,90 @@ class StockMonitor:
       print(f"[ERROR] PTT scrape {board} error: {e}")
       self._ptt_scrape_blocked = True
 
+    if results and not getattr(self, '_ptt_scrape_blocked', False):
+      self._ptt_cc_cache[cache_key] = {'time': now, 'data': results}
+    return results
+
+
+  def _fetch_pttweb(self, board='Stock', max_pages=7):
+    """Tier 2: Scrape pttweb.cc SSR pages (~200 articles: 50 on page 1 + 6 * 25/page).
+    Cached for 60s to avoid redundant fetches across news, tickers, and authors."""
+    results = []
+    if getattr(self, '_pttweb_blocked', False):
+      return results
+
+    now = time.time()
+    if not hasattr(self, '_pttweb_cache'):
+      self._pttweb_cache = {}
+    cache_key = (board, max_pages)
+    cached = self._pttweb_cache.get(cache_key)
+    if cached and (now - cached['time'] < 60):
+      return cached['data']
+
+    seen_hrefs = set()
+    url = f'https://www.pttweb.cc/bbs/{board}'
+    try:
+      for page_num in range(max_pages):
+        r = self._ptt_get(url)
+        if r.status_code != 200:
+          print(f"[WARN] pttweb.cc {board} page {page_num+1} failed (status={r.status_code})")
+          self._pttweb_blocked = True
+          break
+
+        soup = BS(r.text, 'html.parser')
+        top_els = soup.select('div.e7-right-top-container')
+        if not top_els:
+          print(f"[WARN] pttweb.cc {board}: 200 but no articles")
+          self._pttweb_blocked = True
+          break
+
+        for top_el in top_els:
+          row = top_el.find_parent('div', class_='e7-container')
+          if not row:
+            continue
+          # Skip pinned bottom announcements (wrapped in div.my-1)
+          if row.parent and 'my-1' in (row.parent.get('class') or []):
+            continue
+          a = top_el.select_one('a.e7-article-default')
+          if not a or not a.get('href'):
+            continue
+          href = a['href']
+          if href in seen_hrefs:
+            continue
+          seen_hrefs.add(href)
+
+          t_el = top_el.select_one('span.e7-show-if-device-is-not-xs') or top_el.select_one('span.e7-title')
+          if not t_el:
+            continue
+          title = ''.join(t_el.stripped_strings)
+          if not title:
+            continue
+
+          link = f'https://www.ptt.cc{href}.html' if not href.endswith('.html') else f'https://www.ptt.cc{href}'
+          r_el = row.select_one('div.e7-recommendScore')
+          nrec = ''.join(r_el.stripped_strings) if r_el else '0'
+          u_el = row.select_one('div.e7-meta-container a')
+          author = ''.join(u_el.stripped_strings) if u_el else ''
+          d_els = row.select('div.e7-grey-text span.text-no-wrap')
+          date_str = d_els[-1].text.strip() if d_els else ''
+          results.append((title, link, date_str, nrec, author))
+
+        if page_num < max_pages - 1:
+          sorts = [int(x) for x in re.findall(r'sortOrder:(\d+)', r.text)]
+          valid_sorts = [s for s in sorts if s >= sorts[0] - 60] if sorts else []
+          if not valid_sorts:
+            break
+          next_n = min(valid_sorts) - 22
+          url = f'https://www.pttweb.cc/bbs/{board}/page?n={next_n}'
+          time.sleep(random.uniform(0.3, 0.8))
+
+    except Exception as e:
+      print(f"[ERROR] pttweb.cc scrape {board} error: {e}")
+      self._pttweb_blocked = True
+
+    if results:
+      print(f"[DEBUG] pttweb.cc fetched {len(results)} articles for {board}")
+      self._pttweb_cache[cache_key] = {'time': now, 'data': results}
     return results
 
 
@@ -2707,8 +2800,8 @@ class StockMonitor:
       return 0, s
 
 
-  def _fetch_ptt_api(self, board='Stock', pages=2):
-    """Fetch articles from go-pttbbs REST API (works globally, returns structured JSON).
+  def _fetch_ptt_api(self, board='Stock', pages=1):
+    """Tier 3: Fetch articles from go-pttbbs REST API (~200 articles per page).
     Cached for 60s to avoid redundant fetches across news, tickers, and authors."""
     now = time.time()
     if not hasattr(self, '_api_cache'):
@@ -2767,31 +2860,34 @@ class StockMonitor:
     return results
 
 
+  def _get_board_articles(self, board='Stock', pages=10):
+    """3-tier PTT article fetcher (~200 articles across all tiers):
+    1. www.ptt.cc (10 pages * 20 = 200 articles)
+    2. www.pttweb.cc (page 1: 50 + 6 * 25 = 200 articles)
+    3. api.devptt.dev (1 page * 200 = 200 articles)"""
+    articles = self._ptt_scrape_pages(board, pages)
+    if not getattr(self, '_ptt_scrape_blocked', False) and articles:
+      return articles
+
+    pttweb_pages = 7
+    print(f"[DEBUG] PTT ({board}): falling back to Tier 2 (pttweb.cc, {pttweb_pages} pages)")
+    articles = self._fetch_pttweb(board, max_pages=pttweb_pages)
+    if not getattr(self, '_pttweb_blocked', False) and articles:
+      return articles
+
+    print(f"[DEBUG] PTT ({board}): falling back to Tier 3 (api.devptt.dev)")
+    return self._fetch_ptt_api(board, pages=1)
+
+
   def get_ptt_news(self, keywords):
     news_list = []
-    scraped = self._ptt_scrape_pages('Stock', 5)
-    is_blocked = getattr(self, '_ptt_scrape_blocked', False)
-
-    if not is_blocked and scraped:
-      for title, link, date, nrec, author in scraped:
-        matched = any(k in title for k in keywords)
-        nrec_val, nrec_display = self._parse_nrec(nrec)
-        is_hot = (nrec_val >= 20)
-        if matched or is_hot:
-          tag = f"🔥({nrec_display})" if is_hot else "👀"
-          news_list.append({"date": date, "title": title, "link": link, "tag": tag})
-
-    # Fallback: go-pttbbs API when direct scraping is blocked or empty
-    if is_blocked or not news_list:
-      news_list = []
-      print("[DEBUG] PTT News: using API fallback")
-      for title, link, date, nrec, author in self._fetch_ptt_api('Stock'):
-        matched = any(k in title for k in keywords)
-        nrec_val, nrec_display = self._parse_nrec(nrec)
-        is_hot = (nrec_val >= 20)
-        if matched or is_hot:
-          tag = f"🔥({nrec_display})" if is_hot else "👀"
-          news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+    for title, link, date, nrec, author in self._get_board_articles('Stock', 10):
+      matched = any(k in title for k in keywords)
+      nrec_val, nrec_display = self._parse_nrec(nrec)
+      is_hot = (nrec_val >= 20)
+      if matched or is_hot:
+        tag = f"🔥({nrec_display})" if is_hot else "👀"
+        news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
     return news_list
 
@@ -2800,35 +2896,16 @@ class StockMonitor:
 
   def get_ptt_tickers(self, portfolio):
     news_list = []
-    scraped = self._ptt_scrape_pages('Stock', 5)
-    is_blocked = getattr(self, '_ptt_scrape_blocked', False)
-
-    if not is_blocked and scraped:
-      for title, link, date, nrec, author in scraped:
-        for p in portfolio:
-          symbol = p['symbol']
-          if '&' in symbol or '=' in symbol: continue  # Skip futures/forex tokens (WTX&, EURUSD=X)
-          symbol_des = (p['symbolName'].split(' '))[0]
-          idx = symbol.find('.')
-          ticker = symbol[:idx] if idx != -1 else symbol
-          if (ticker in title) or (symbol_des in title):
-            tag = f'💲(<a href="https://www.pttweb.cc/ptt-search#gsc.tab=0&gsc.q={ticker}&gsc.sort=date" target="_blank" style="color:inherit;">{ticker}</a>)'
-            news_list.append({"date": date, "title": title, "link": link, "tag": tag})
-
-    # Fallback: go-pttbbs API when direct scraping is blocked or empty
-    if is_blocked or not news_list:
-      news_list = []
-      print("[DEBUG] PTT Tickers: using API fallback")
-      for title, link, date, nrec, author in self._fetch_ptt_api('Stock'):
-        for p in portfolio:
-          symbol = p['symbol']
-          if '&' in symbol or '=' in symbol: continue  # Skip futures/forex tokens (WTX&, EURUSD=X)
-          symbol_des = (p['symbolName'].split(' '))[0]
-          idx = symbol.find('.')
-          ticker = symbol[:idx] if idx != -1 else symbol
-          if (ticker in title) or (symbol_des in title):
-            tag = f'💲(<a href="https://www.pttweb.cc/ptt-search#gsc.tab=0&gsc.q={ticker}&gsc.sort=date" target="_blank" style="color:inherit;">{ticker}</a>)'
-            news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+    for title, link, date, nrec, author in self._get_board_articles('Stock', 10):
+      for p in portfolio:
+        symbol = p['symbol']
+        if '&' in symbol or '=' in symbol: continue  # Skip futures/forex tokens (WTX&, EURUSD=X)
+        symbol_des = (p['symbolName'].split(' '))[0]
+        idx = symbol.find('.')
+        ticker = symbol[:idx] if idx != -1 else symbol
+        if (ticker in title) or (symbol_des in title):
+          tag = f'💲(<a href="https://www.pttweb.cc/ptt-search#gsc.tab=0&gsc.q={ticker}&gsc.sort=date" target="_blank" style="color:inherit;">{ticker}</a>)'
+          news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
     return news_list
 
@@ -2837,23 +2914,12 @@ class StockMonitor:
   
   def get_ptt_authors(self, board, names):
     news_list = []
-    scraped = self._ptt_scrape_pages(board, 10)
-    is_blocked = getattr(self, '_ptt_scrape_blocked', False)
-
-    if not is_blocked and scraped:
-      for title, link, date, nrec, author in scraped:
-        if author in names:
-          tag = f'👤(<a href="https://www.pttweb.cc/user/{author}" target="_blank" style="color:inherit;">{author}</a>)'
-          news_list.append({"date": date, "title": title, "link": link, "tag": tag})
-
-    # Fallback: go-pttbbs API when direct scraping is blocked or empty
-    if is_blocked or not news_list:
-      news_list = []
-      print("[DEBUG] PTT Authors: using API fallback")
-      for title, link, date, nrec, author in self._fetch_ptt_api(board):
-        if author in names:
-          tag = f'👤(<a href="https://www.pttweb.cc/user/{author}" target="_blank" style="color:inherit;">{author}</a>)'
-          news_list.append({"date": date, "title": title, "link": link, "tag": tag})
+    if not names:
+      return news_list
+    for title, link, date, nrec, author in self._get_board_articles(board, 10):
+      if author in names:
+        tag = f'👤(<a href="https://www.pttweb.cc/user/{author}" target="_blank" style="color:inherit;">{author}</a>)'
+        news_list.append({"date": date, "title": title, "link": link, "tag": tag})
 
     return news_list
 
@@ -3044,6 +3110,9 @@ class StockMonitor:
 
     rows = []
     ticker_news = []
+    if self.run_count % 30 == 0:
+      self._ptt_scrape_blocked = False
+      self._pttweb_blocked = False
     
     chunk_len = 20
     for c in range(0, len(self.portfolio), chunk_len):
@@ -3178,7 +3247,6 @@ class StockMonitor:
     # 只有當計數器是 0 或 30 的倍數時，才真正去爬蟲
     if self.run_count % 30 == 0:
       print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Updating PTT News (Keywords/Authors)...")
-      self._ptt_scrape_blocked = False  # Retry scraping each refresh cycle
       #self.news_cache = ticker_news + self.get_ptt_news(keywords) +  self.get_ptt_authors("Stock", PTT_AUTHORS)
       self.news_cache = ticker_news + self.get_ptt_news(keywords) +  self.get_ptt_authors("Stock", self.author_list)
       print(f"[DEBUG] Total News Found: {len(self.news_cache)}")
