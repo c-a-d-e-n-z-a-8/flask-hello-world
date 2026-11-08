@@ -3209,6 +3209,7 @@ HTML_TEMPLATE = """
   <title>🚀Stock Dashboard</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
   <style>
   :root {
     --o-brand:#0f6cbd; --o-brand-dark:#0c5aa0; --o-bar:#0f6cbd;
@@ -3415,18 +3416,26 @@ HTML_TEMPLATE = """
     gap: 8px;
   }
   .pf-card {
-    border: 1px solid #ccc;
+    border: 1px solid var(--o-border);
     border-radius: 6px;
     padding: 7px 9px 6px;
-    background: #fff;
+    background: var(--o-card);
+    box-shadow: var(--o-shadow);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+  }
+  .pf-card:hover {
+    border-color: var(--o-brand);
+    box-shadow: 0 3px 10px rgba(15, 108, 189, 0.18);
+    transform: translateY(-1px);
   }
   .pf-card-header {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
   }
-  .pf-symbol { font-weight: bold; font-size: 13px; color: #222; }
-  .pf-name { font-size: 10px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; margin-bottom: 2px; }
+  .pf-symbol { font-weight: bold; font-size: 13px; color: var(--o-text); }
+  .pf-name { font-size: 10px; color: var(--o-text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; margin-bottom: 2px; }
   .pf-price { font-size: 13px; font-weight: bold; }
   .pf-chart-title { font-size: 10px; color: #666; margin-bottom: 2px; word-break: keep-all; }
   .pf-chart-area {
@@ -3437,6 +3446,122 @@ HTML_TEMPLATE = """
     justify-content: center;
     background: #f9f9f9;
     border-radius: 3px;
+  }
+
+  /* === Portfolio Stock Detail Pop-up Modal (Stock Dashboard Fluent Theme) === */
+  .sd-backdrop {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(32, 31, 30, 0.45); backdrop-filter: blur(2px); z-index: 10000;
+    opacity: 0; pointer-events: none; transition: opacity 0.18s ease;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .sd-backdrop.open { opacity: 1; pointer-events: auto; }
+
+  .sd-modal {
+    width: 660px; max-width: 96vw; max-height: 90vh;
+    background: var(--o-bg); color: var(--o-text);
+    border: 1px solid var(--o-border); border-radius: 8px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24), 0 2px 8px rgba(0, 0, 0, 0.12);
+    transform: scale(0.96) translateY(8px);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex; flex-direction: column; overflow: hidden; font-size: 12px;
+  }
+  .sd-backdrop.open .sd-modal { transform: scale(1) translateY(0); }
+
+  .sd-header {
+    padding: 10px 16px; border-bottom: 1px solid var(--o-border); border-top: 3px solid var(--o-brand);
+    background: var(--o-ribbon);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0;
+  }
+  .sd-title-wrap { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .sd-code { font-size: 18px; font-weight: 700; color: var(--o-text); }
+  .sd-name { font-size: 14px; font-weight: 600; color: var(--o-brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+  .sd-price-wrap { display: flex; align-items: baseline; gap: 6px; flex-shrink: 0; margin-left: auto; margin-right: 6px; }
+  .sd-price { font-size: 17px; font-weight: 700; color: var(--o-text); }
+  .sd-change { font-size: 12px; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
+  .sd-change.up { color: #d13438; background: #fde7e9; border: 1px solid #f1bbbc; }
+  .sd-change.down { color: #107c10; background: #dff6dd; border: 1px solid #a7e3a5; }
+  .sd-close-btn {
+    border: 1px solid var(--o-border); background: var(--o-card); color: var(--o-text-sub); width: 28px; height: 28px;
+    border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: all 0.12s; flex-shrink: 0;
+  }
+  .sd-close-btn:hover { background: #fde7e9; border-color: #f1bbbc; color: #d13438; }
+
+  .sd-body {
+    flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .sd-body::-webkit-scrollbar { width: 6px; }
+  .sd-body::-webkit-scrollbar-thumb { background: #c8c6c4; border-radius: 4px; }
+
+  .sd-range-bar { display: flex; gap: 4px; align-items: center; }
+  .sd-range-btn {
+    flex: 1; padding: 4px 0; border: 1px solid var(--o-border); background: var(--o-card);
+    border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--o-text-sub); cursor: pointer;
+    transition: all 0.12s ease;
+  }
+  .sd-range-btn:hover { background: var(--o-hover); color: var(--o-text); }
+  .sd-range-btn.active {
+    background: #e1eefb; border-color: var(--o-brand); color: var(--o-brand-dark); font-weight: 700;
+  }
+  .sd-chart-box {
+    width: 100%; height: 270px; position: relative; border: 1px solid var(--o-border);
+    border-radius: 6px; background: var(--o-card); overflow: hidden; flex-shrink: 0;
+    box-shadow: var(--o-shadow);
+  }
+  .sd-legend {
+    font-size: 11px; color: var(--o-text-sub); display: flex; flex-wrap: wrap; gap: 8px; margin-top: 1px;
+  }
+  .sd-legend span { font-weight: 700; color: var(--o-text); }
+
+  .sd-card {
+    background: var(--o-card); border: 1px solid var(--o-border); border-radius: 6px; padding: 10px 12px;
+    box-shadow: var(--o-shadow);
+  }
+  .sd-card-hdr {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+  }
+  .sd-card-title {
+    font-size: 13px; font-weight: 700; color: var(--o-text);
+    border-left: 3px solid var(--o-brand); padding-left: 6px;
+  }
+  .sd-card-val { font-size: 13px; font-weight: 700; color: var(--o-brand-dark); }
+  .sd-card-sub { font-size: 11px; color: var(--o-text-sub); margin-bottom: 8px; line-height: 1.4; }
+  .sd-card-sub.muted { color: var(--o-text-sub); }
+
+  .sd-row-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .sd-row-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+  .sd-subcol { display: flex; flex-direction: column; gap: 2px; }
+  .sd-subcol-title { font-size: 11px; color: var(--o-text-sub); font-weight: 600; }
+  .sd-subcol-stat { font-size: 11px; font-weight: 700; margin-top: 2px; }
+  .sd-dates-row {
+    display: flex; justify-content: space-between; font-size: 10px; color: #8a8886; margin-top: 2px;
+  }
+
+  .sd-metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .sd-metric-item {
+    background: var(--o-ribbon); border: 1px solid var(--o-border); border-radius: 4px; padding: 6px; text-align: center;
+  }
+  .sd-metric-lbl { font-size: 11px; color: var(--o-text-sub); margin-bottom: 2px; }
+  .sd-metric-val { font-size: 13px; font-weight: 700; color: var(--o-text); }
+
+  .sd-links {
+    display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; border-top: 1px solid var(--o-border);
+  }
+  .sd-ext-link {
+    flex: 1; min-width: 80px; text-align: center; padding: 6px 0; border-radius: 4px;
+    background: var(--o-card); border: 1px solid var(--o-border); color: var(--o-text); text-decoration: none;
+    font-size: 11px; font-weight: 600; transition: all 0.12s ease;
+  }
+  .sd-ext-link:hover { background: #e1eefb; border-color: var(--o-brand); color: var(--o-brand-dark); text-decoration: none; }
+
+  .sd-loading {
+    display: flex; align-items: center; justify-content: center; height: 100%;
+    color: var(--o-text-sub); font-weight: 600; text-align: center; padding: 12px;
+  }
+  .sd-consensus-bar {
+    display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--o-border); margin: 6px 0;
   }
 
   /* ===== Outlook chrome: top command bar + ribbon ===== */
@@ -3859,8 +3984,12 @@ async function loadPortfolioSparklines() {
       const safeId = 'pf_' + row.symbol.replace(/[^a-zA-Z0-9]/g, '_');
       let changeVal = parseFloat(row.change.replace('%', ''));
       const colorStyle = changeVal >= 0 ? 'color:#ff3333;' : 'color:#00cc44;';
+      const attrSym = String(row.symbol || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const attrName = String(row.name || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const attrPrice = String(row.price ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const attrChange = String(row.change || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
       html += `
-        <div class="pf-card">
+        <div class="pf-card" data-symbol="${attrSym}" data-name="${attrName}" data-price="${attrPrice}" data-change="${attrChange}" title="點擊查看 K 線與基本面明細">
           <div class="pf-card-header">
             <span class="pf-symbol">${row.symbol.split('.')[0]}</span>
             <span class="pf-price" style="${colorStyle}">${row.price}</span>
@@ -4867,10 +4996,894 @@ document.addEventListener('DOMContentLoaded', () => {
   updateNotify();
   heatmapInterval = setInterval(conditionalUpdateHeatmap, 300000);
   monitorInterval = setInterval(updateNotify, 120000);
+  initPfStockModal();
 });
+
+// ==========================================
+// Portfolio Card Pop-up Modal (R2 + Lightweight Charts)
+// ==========================================
+var pfStockCache = {};
+var pfCurrentChart = null;
+var pfCurrentCandleSeries = null;
+var pfCurrentCandleData = [];
+var pfCurrentStockId = null;
+var pfCurrentIsUS = false;
+
+function pfCalculateMA(data, period) {
+  var res = [];
+  var sum = 0;
+  for (var i = 0; i < data.length; i++) {
+    sum += data[i].close;
+    if (i >= period) sum -= data[i - period].close;
+    if (i >= period - 1) {
+      res.push({ time: data[i].time, value: parseFloat((sum / period).toFixed(2)) });
+    }
+  }
+  return res;
+}
+
+function pfBuildBarSvg(arr, w, h, isBi, fillColor) {
+  if (!arr || !arr.length) return '';
+  var n = arr.length;
+  var bw = Math.max(5, (w - (n - 1) * 3) / n);
+  var rects = '';
+  if (!isBi) {
+    var max = Math.max.apply(null, arr);
+    if (max <= 0) max = 1;
+    for (var i = 0; i < n; i++) {
+      var barH = Math.max(3, (arr[i] / max) * (h - 4));
+      var x = i * (bw + 3);
+      var y = h - barH;
+      var op = (i === n - 1) ? 1.0 : 0.65;
+      rects += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + barH.toFixed(1) + '" fill="' + (fillColor || '#0f6cbd') + '" rx="1.5" opacity="' + op + '"/>';
+    }
+  } else {
+    var absMax = 1;
+    for (var i = 0; i < n; i++) {
+      if (Math.abs(arr[i]) > absMax) absMax = Math.abs(arr[i]);
+    }
+    var midY = h / 2;
+    rects += '<line x1="0" y1="' + midY + '" x2="' + w + '" y2="' + midY + '" stroke="#edebe9" stroke-width="1"/>';
+    for (var i = 0; i < n; i++) {
+      var barH = Math.max(2, (Math.abs(arr[i]) / absMax) * (h / 2 - 2));
+      var x = i * (bw + 3);
+      var y = arr[i] >= 0 ? (midY - barH) : midY;
+      var col = arr[i] >= 0 ? '#d13438' : '#107c10';
+      rects += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + barH.toFixed(1) + '" fill="' + col + '" rx="1"/>';
+    }
+  }
+  return '<svg width="100%" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' + rects + '</svg>';
+}
+
+function pfBuildLineSvg(arr, w, h, col) {
+  if (!arr || arr.length < 2) return '';
+  var min = Math.min.apply(null, arr);
+  var max = Math.max.apply(null, arr);
+  var range = max - min || 1;
+  var n = arr.length;
+  var pad = 4;
+  var pts = [];
+  for (var i = 0; i < n; i++) {
+    var x = pad + (i / (n - 1)) * (w - pad * 2);
+    var y = h - pad - ((arr[i] - min) / range) * (h - pad * 2);
+    pts.push(x.toFixed(1) + ',' + y.toFixed(1));
+  }
+  var d = 'M ' + pts.join(' L ');
+  var last = pts[pts.length - 1].split(',');
+  return '<svg width="100%" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="3" fill="' + col + '"/>' +
+    '</svg>';
+}
+
+function pfFmtWan(v) {
+  if (v == null || isNaN(v)) return '-';
+  var s = v > 0 ? '+' : '';
+  if (Math.abs(v) >= 10000) return s + Math.round(v / 10000).toLocaleString() + '萬';
+  return s + Math.round(v).toLocaleString();
+}
+
+function pfFmtUsDollar(v) {
+  if (v == null || isNaN(v)) return '-';
+  var abs = Math.abs(v);
+  if (abs >= 1e12) return '$' + (v / 1e12).toFixed(2) + 'T';
+  if (abs >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+  if (abs >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+  return '$' + v.toLocaleString();
+}
+
+function openPfStockModal(rawSymbol, stockName, cardPrice, cardChange) {
+  if (!rawSymbol) return;
+  var symStr = String(rawSymbol).trim();
+  var isTW = symStr.indexOf('.TW') !== -1 || /^[0-9]/.test(symStr);
+  var isUS = !isTW;
+  var cleanId = symStr;
+  if (isTW && cleanId.indexOf('.') > 0) {
+    cleanId = cleanId.split('.')[0];
+  } else if (isUS) {
+    cleanId = cleanId.replace(/\\./g, '-').toUpperCase();
+  }
+  pfCurrentStockId = cleanId;
+  pfCurrentIsUS = isUS;
+
+  var backdrop = document.getElementById("stockModalBackdrop");
+  if (backdrop) backdrop.classList.add("open");
+
+  var elCode = document.getElementById("sdStockCode");
+  var elName = document.getElementById("sdStockName");
+  var elPrice = document.getElementById("sdPrice");
+  var elChg = document.getElementById("sdChange");
+  if (elCode) elCode.textContent = cleanId;
+  if (elName) elName.textContent = stockName || "";
+  if (elPrice) elPrice.textContent = cardPrice ? ((isUS && !cleanId.startsWith('^') ? "$" : "") + cardPrice) : "-";
+  if (elChg) {
+    if (cardChange) {
+      var cVal = parseFloat(String(cardChange).replace('%', ''));
+      elChg.textContent = (cVal > 0 && String(cardChange).indexOf('+') === -1 ? '+' : '') + cardChange;
+      elChg.className = "sd-change " + (cVal >= 0 ? "up" : "down");
+    } else {
+      elChg.textContent = "-";
+      elChg.className = "sd-change";
+    }
+  }
+
+  var rangeBar = document.getElementById("sdRangeBar");
+  var legendEl = document.getElementById("sdLegend");
+  if (rangeBar) rangeBar.style.display = "flex";
+  if (legendEl) legendEl.style.display = "flex";
+
+  var twSec = document.getElementById("sdTwSections");
+  var usSec = document.getElementById("sdUsSections");
+  if (twSec) twSec.style.display = isUS ? "none" : "flex";
+  if (usSec) usSec.style.display = isUS ? "flex" : "none";
+
+  var tvUrl = getYahooToTradingViewUrl(symStr);
+  var commUrl = getCommunityLink(symStr);
+  if (!isUS) {
+    var lnkTV = document.getElementById("lnkTV");
+    var lnkGI = document.getElementById("lnkGoodinfo");
+    var lnkYH = document.getElementById("lnkYahoo");
+    var lnkWG = document.getElementById("lnkWantgoo");
+    var lnkCM = document.getElementById("lnkCMoney");
+    if (lnkTV) lnkTV.href = tvUrl;
+    if (lnkGI) lnkGI.href = "https://goodinfo.tw/tw/StockDetail.asp?STOCK_ID=" + cleanId;
+    if (lnkYH) lnkYH.href = "https://tw.stock.yahoo.com/quote/" + symStr;
+    if (lnkWG) lnkWG.href = "https://www.wantgoo.com/stock/" + cleanId;
+    if (lnkCM) lnkCM.href = commUrl;
+  } else {
+    var lnkUsTV = document.getElementById("lnkUsTV");
+    var lnkUsFV = document.getElementById("lnkUsFinviz");
+    var lnkUsYH = document.getElementById("lnkUsYahoo");
+    var lnkUsMT = document.getElementById("lnkUsMacrotrends");
+    var lnkUsFT = document.getElementById("lnkUsFutu");
+    if (lnkUsTV) lnkUsTV.href = tvUrl;
+    if (lnkUsFV) lnkUsFV.href = "https://finviz.com/quote.ashx?t=" + encodeURIComponent(cleanId);
+    if (lnkUsYH) lnkUsYH.href = "https://finance.yahoo.com/quote/" + encodeURIComponent(symStr);
+    if (lnkUsMT) lnkUsMT.href = "https://www.macrotrends.net/stocks/charts/" + encodeURIComponent(cleanId) + "/" + encodeURIComponent(cleanId.toLowerCase()) + "/pe-ratio";
+    if (lnkUsFT) lnkUsFT.href = commUrl;
+  }
+
+  var cacheKey = (isUS ? "us:" : "tw:") + cleanId;
+  var container = document.getElementById("sdChartContainer");
+  if (pfCurrentChart) {
+    pfCurrentChart.remove();
+    pfCurrentChart = null;
+  }
+  if (container) {
+    container.innerHTML = '<div id="sdLoading" class="sd-loading">⏳ 載入 K 線與基本面指標中...</div>';
+  }
+
+  if (pfStockCache[cacheKey]) {
+    renderPfStockData(pfStockCache[cacheKey], isUS, symStr);
+  } else {
+    var r2Url = "https://r2.finlab.finance/td-stock-panel/" + (isUS ? "us/" : "tw/") + encodeURIComponent(cleanId) + ".json";
+    fetch(r2Url)
+      .then(function(r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        pfStockCache[cacheKey] = data;
+        if (pfCurrentStockId === cleanId) {
+          renderPfStockData(data, isUS, symStr);
+        }
+      })
+      .catch(function(err) {
+        console.warn("R2 fallback for " + symStr + ":", err);
+        if (pfCurrentStockId === cleanId) {
+          renderPfFallbackView(symStr, cleanId, isUS);
+        }
+      });
+  }
+}
+
+function renderPfFallbackView(rawSymbol, cleanId, isUS) {
+  var rangeBar = document.getElementById("sdRangeBar");
+  var legendEl = document.getElementById("sdLegend");
+  if (rangeBar) rangeBar.style.display = "none";
+  if (legendEl) legendEl.style.display = "none";
+
+  // Hide empty fundamental cards, keep only external links bar visible
+  var twCards = document.getElementById("sdTwCardsWrap");
+  var usCards = document.getElementById("sdUsCardsWrap");
+  if (twCards) twCards.style.display = "none";
+  if (usCards) usCards.style.display = "none";
+
+  var imgUrl = (typeof CHART_URL_MAP !== 'undefined') ? CHART_URL_MAP[rawSymbol] : null;
+  if (!imgUrl) {
+    if (!isUS) {
+      imgUrl = "https://stock.wearn.com/finance_chart.asp?stockid=" + encodeURIComponent(cleanId) + "&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1";
+    } else {
+      imgUrl = "https://charts2.finviz.com/chart.ashx?t=" + encodeURIComponent(cleanId) + "&ta=1&ty=c&p=d&s=l";
+    }
+  }
+  var container = document.getElementById("sdChartContainer");
+  if (container) {
+    container.style.height = "auto";
+    container.style.minHeight = "260px";
+    container.innerHTML = '<div style="padding:8px;text-align:center;"><img src="' + imgUrl + '" style="max-width:100%;height:auto;border-radius:4px;" alt="' + cleanId + '"><div style="font-size:11px;color:var(--o-text-sub);margin-top:6px;">ℹ️ 此標的（ETF / 指數 / 期貨）無 R2 財報快取，已自動切換為技術線圖</div></div>';
+  }
+}
+
+function closePfStockModal() {
+  var backdrop = document.getElementById("stockModalBackdrop");
+  if (backdrop) backdrop.classList.remove("open");
+}
+
+function renderPfStockData(data, isUS, rawSymbol) {
+  var container = document.getElementById("sdChartContainer");
+  if (container) {
+    container.style.height = "270px";
+    container.innerHTML = "";
+  }
+  var twCards = document.getElementById("sdTwCardsWrap");
+  var usCards = document.getElementById("sdUsCardsWrap");
+  var isIndex = String(pfCurrentStockId || '').indexOf('^') === 0;
+  if (twCards) twCards.style.display = (!isUS && !isIndex) ? "flex" : "none";
+  if (usCards) usCards.style.display = (isUS && !isIndex) ? "flex" : "none";
+
+  var chartBars = data.chart || [];
+  if (chartBars.length >= 2) {
+    var lastBar = chartBars[chartBars.length - 1];
+    var prevBar = chartBars[chartBars.length - 2];
+    var lastPrice = lastBar[4];
+    var prevPrice = prevBar[4];
+    var diff = lastPrice - prevPrice;
+    var diffPct = (diff / prevPrice) * 100;
+    var up = diff >= 0;
+
+    var priceEl = document.getElementById("sdPrice");
+    var chgEl = document.getElementById("sdChange");
+    var dec = isUS ? 2 : 1;
+    if (priceEl) priceEl.textContent = (isUS && !isIndex ? "$" : "") + lastPrice.toFixed(dec);
+    if (chgEl) {
+      chgEl.textContent = (up ? "+" : "") + diff.toFixed(dec) + " (" + (up ? "+" : "") + diffPct.toFixed(2) + "%)";
+      chgEl.className = "sd-change " + (up ? "up" : "down");
+    }
+  }
+
+  if (!isIndex) {
+    if (isUS) {
+      renderPfUsStockInfo(data.info || {});
+    } else {
+      renderPfTwStockInfo(data.info || {});
+    }
+  }
+  renderPfChart(chartBars, isUS);
+}
+
+function renderPfTwStockInfo(info) {
+  var rev = info.revenue || [];
+  if (rev.length) {
+    var lastRev = rev[rev.length - 1];
+    var revYi = (lastRev.value / 100000).toFixed(1);
+    var revYoy = (lastRev.yoy != null ? lastRev.yoy.toFixed(1) : "0");
+    var consec = 0;
+    for (var i = rev.length - 1; i >= 0; i--) {
+      if (rev[i].yoy > 0) consec++;
+      else break;
+    }
+    var revHdr = document.getElementById("revHdrStat");
+    var revSub = document.getElementById("revSubText");
+    if (revHdr) revHdr.textContent = revYi + "億 " + (parseFloat(revYoy) >= 0 ? "+" : "") + revYoy + "%";
+    if (revSub) revSub.textContent = "營收 " + revYi + "億，YoY " + (parseFloat(revYoy) >= 0 ? "+" : "") + revYoy + "%，連續 " + consec + " 月成長";
+
+    var revVals = rev.map(function(r) { return r.value; });
+    var revYoys = rev.map(function(r) { return r.yoy || 0; });
+    var bSvg1 = document.getElementById("revBarSvg1");
+    var bSvg2 = document.getElementById("revBarSvg2");
+    if (bSvg1) bSvg1.innerHTML = pfBuildBarSvg(revVals, 250, 48, false, "#0f6cbd");
+    if (bSvg2) bSvg2.innerHTML = pfBuildBarSvg(revYoys, 250, 48, true);
+    var rD1 = document.getElementById("revD1"), rD2 = document.getElementById("revD2"), rD3 = document.getElementById("revD3"), rD4 = document.getElementById("revD4");
+    if (rD1) rD1.textContent = rev[0].date;
+    if (rD2) rD2.textContent = rev[rev.length - 1].date;
+    if (rD3) rD3.textContent = rev[0].date;
+    if (rD4) rD4.textContent = rev[rev.length - 1].date;
+  }
+
+  var fArr = (info.foreign_net || []).map(function(x) { return x.value; });
+  var uArr = (info.fund_net || []).map(function(x) { return x.value; });
+  var dArr = (info.dealer_net || []).map(function(x) { return x.value; });
+  var fSum = fArr.reduce(function(a, b) { return a + b; }, 0);
+  var uSum = uArr.reduce(function(a, b) { return a + b; }, 0);
+  var dSum = dArr.reduce(function(a, b) { return a + b; }, 0);
+  var totInst = fSum + uSum + dSum;
+
+  var instSub = document.getElementById("instSubText");
+  if (instSub) instSub.textContent = "三大法人買賣超，合計 " + pfFmtWan(totInst);
+  var fSvg = document.getElementById("instForeignSvg"), uSvg = document.getElementById("instFundSvg"), dSvg = document.getElementById("instDealerSvg");
+  if (fSvg) fSvg.innerHTML = pfBuildBarSvg(fArr, 160, 45, true);
+  if (uSvg) uSvg.innerHTML = pfBuildBarSvg(uArr, 160, 45, true);
+  if (dSvg) dSvg.innerHTML = pfBuildBarSvg(dArr, 160, 45, true);
+
+  var fStat = document.getElementById("instForeignStat"), uStat = document.getElementById("instFundStat"), dStat = document.getElementById("instDealerStat");
+  if (fStat) { fStat.textContent = "Σ " + pfFmtWan(fSum); fStat.style.color = fSum >= 0 ? "#d13438" : "#107c10"; }
+  if (uStat) { uStat.textContent = "Σ " + pfFmtWan(uSum); uStat.style.color = uSum >= 0 ? "#d13438" : "#107c10"; }
+  if (dStat) { dStat.textContent = "Σ " + pfFmtWan(dSum); dStat.style.color = dSum >= 0 ? "#d13438" : "#107c10"; }
+
+  var mHist = info.margin_history || [];
+  var sHist = info.short_history || [];
+  var mVals = mHist.map(function(x) { return x.value; });
+  var sVals = sHist.map(function(x) { return x.value; });
+  var mDelta = mVals.length >= 2 ? (mVals[mVals.length - 1] - mVals[mVals.length - 2]) : 0;
+  var sDelta = sVals.length >= 2 ? (sVals[sVals.length - 1] - sVals[sVals.length - 2]) : 0;
+
+  var mTrend = (mDelta >= 0 ? "融資增加 " : "融資減少 ") + Math.abs(Math.round(mDelta)).toLocaleString() + " 張<br>";
+  var sTrend = (sDelta >= 0 ? "融券增加 " : "融券減少 ") + Math.abs(Math.round(sDelta)).toLocaleString() + " 張<br>";
+  var syncTrend = (mDelta >= 0 && sDelta >= 0) ? "融資融券同步上升" : (mDelta < 0 && sDelta < 0 ? "融資融券同步下降" : "資券背離");
+  var mSub = document.getElementById("marginSubText");
+  if (mSub) mSub.innerHTML = mTrend + sTrend + syncTrend;
+
+  var mUtil = document.getElementById("mUtilVal"), sUtil = document.getElementById("sUtilVal");
+  if (mUtil) mUtil.textContent = (info.margin_utilization ? info.margin_utilization.toFixed(1) + "%" : "-") + (info.margin_util_rank ? " #" + info.margin_util_rank : "");
+  if (sUtil) sUtil.textContent = (info.short_utilization ? info.short_utilization.toFixed(1) + "%" : "-") + (info.short_util_rank ? " #" + info.short_util_rank : "");
+
+  var lastM = mVals.length ? mVals[mVals.length - 1] : 0;
+  var lastS = sVals.length ? sVals[sVals.length - 1] : 0;
+  var mBal = document.getElementById("mBalVal"), sBal = document.getElementById("sBalVal");
+  if (mBal) mBal.textContent = pfFmtWan(lastM) + " (" + (mDelta >= 0 ? "+" : "") + Math.round(mDelta) + ")";
+  if (sBal) sBal.textContent = Math.round(lastS).toLocaleString() + " (" + (sDelta >= 0 ? "+" : "") + Math.round(sDelta) + ")";
+
+  var mLSvg = document.getElementById("marginLineSvg"), sLSvg = document.getElementById("shortLineSvg");
+  if (mLSvg) mLSvg.innerHTML = pfBuildLineSvg(mVals, 250, 48, "#0f6cbd");
+  if (sLSvg) sLSvg.innerHTML = pfBuildLineSvg(sVals, 250, 48, "#107c10");
+  if (mHist.length) {
+    var mD1 = document.getElementById("mD1"), mD2 = document.getElementById("mD2");
+    if (mD1) mD1.textContent = mHist[0].date.slice(-5);
+    if (mD2) mD2.textContent = mHist[mHist.length - 1].date.slice(-5);
+  }
+  if (sHist.length) {
+    var sD1 = document.getElementById("sD1"), sD2 = document.getElementById("sD2");
+    if (sD1) sD1.textContent = sHist[0].date.slice(-5);
+    if (sD2) sD2.textContent = sHist[sHist.length - 1].date.slice(-5);
+  }
+
+  var oddHist = info.odd_lot_holders || [];
+  var bigHist = info.big400_holders || [];
+  var oddVals = oddHist.map(function(x) { return x.value; });
+  var bigVals = bigHist.map(function(x) { return x.value; });
+  var oddDelta = oddVals.length >= 2 ? (oddVals[oddVals.length - 1] - oddVals[oddVals.length - 2]) : 0;
+  var bigDelta = bigVals.length >= 2 ? (bigVals[bigVals.length - 1] - bigVals[bigVals.length - 2]) : 0;
+
+  var oddTrend = (oddDelta >= 0 ? "零股股東增加 " : "零股股東減少 ") + Math.abs(Math.round(oddDelta)).toLocaleString() + " 人<br>";
+  var bigTrend = (bigDelta >= 0 ? "大戶持股增加 " : "大戶持股減少 ") + Math.abs(Math.round(bigDelta)).toLocaleString() + " 張<br>";
+  var holderSync = (oddDelta >= 0 && bigDelta >= 0) ? "散戶大戶同增" : (oddDelta < 0 && bigDelta < 0 ? "散戶大戶同減" : "籌碼流向集中/發散");
+  var hSub = document.getElementById("holderSubText");
+  if (hSub) hSub.innerHTML = oddTrend + bigTrend + holderSync;
+
+  var hTot = document.getElementById("hTotalVal"), hBigCnt = document.getElementById("hBigCountVal");
+  if (hTot) hTot.textContent = info.total_holders ? pfFmtWan(info.total_holders) : "-";
+  if (hBigCnt) hBigCnt.textContent = info.large_holders_count != null ? info.large_holders_count : "-";
+
+  var lastOdd = oddVals.length ? oddVals[oddVals.length - 1] : 0;
+  var lastBig = bigVals.length ? bigVals[bigVals.length - 1] : 0;
+  var hOdd = document.getElementById("hOddVal"), hBig = document.getElementById("hBigVal");
+  if (hOdd) hOdd.textContent = pfFmtWan(lastOdd) + " (" + (oddDelta >= 0 ? "+" : "") + Math.round(oddDelta) + ")";
+  if (hBig) hBig.textContent = Math.round(lastBig) + " (" + (bigDelta >= 0 ? "+" : "") + Math.round(bigDelta) + ")";
+
+  var oddSvg = document.getElementById("oddLineSvg"), bigSvg = document.getElementById("bigLineSvg");
+  if (oddSvg) oddSvg.innerHTML = pfBuildLineSvg(oddVals, 250, 48, "#0f6cbd");
+  if (bigSvg) bigSvg.innerHTML = pfBuildLineSvg(bigVals, 250, 48, "#d13438");
+  if (oddHist.length) {
+    var hD1 = document.getElementById("hD1"), hD2 = document.getElementById("hD2");
+    if (hD1) hD1.textContent = oddHist[0].date.slice(-5);
+    if (hD2) hD2.textContent = oddHist[oddHist.length - 1].date.slice(-5);
+  }
+  if (bigHist.length) {
+    var hD3 = document.getElementById("hD3"), hD4 = document.getElementById("hD4");
+    if (hD3) hD3.textContent = bigHist[0].date.slice(-5);
+    if (hD4) hD4.textContent = bigHist[bigHist.length - 1].date.slice(-5);
+  }
+
+  function setVal(id, val) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = (val != null) ? val : "-";
+  }
+  setVal("mPE", info.pe_ratio != null ? info.pe_ratio.toFixed(2) : "-");
+  setVal("mPB", info.pb_ratio != null ? info.pb_ratio.toFixed(2) : "-");
+  setVal("mDiv", info.dividend_yield != null ? info.dividend_yield.toFixed(2) + "%" : "-");
+  setVal("mEPS", info.eps != null ? info.eps.toFixed(2) : "-");
+  setVal("mROE", info.roe != null ? (info.roe * 100).toFixed(1) + "%" : "-");
+  setVal("mNetMargin", info.net_margin != null ? (info.net_margin * 100).toFixed(1) + "%" : "-");
+}
+
+function renderPfUsStockInfo(info) {
+  function setVal(id, val) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = (val != null) ? val : "-";
+  }
+  var qRev = info.quarterly_revenue || [];
+  if (qRev.length) {
+    var lastQ = qRev[qRev.length - 1];
+    var revStr = pfFmtUsDollar(lastQ.value);
+    var yoyVal = lastQ.yoy != null ? lastQ.yoy : 0;
+    var yoyStr = (yoyVal >= 0 ? "+" : "") + yoyVal.toFixed(1) + "%";
+    var consec = 0;
+    for (var i = qRev.length - 1; i >= 0; i--) {
+      if ((qRev[i].yoy || 0) > 0) consec++;
+      else break;
+    }
+    setVal("usRevHdrStat", revStr + " (" + yoyStr + ")");
+    setVal("usRevSubText", "最新季營收 (" + lastQ.date + ") " + revStr + "，YoY " + yoyStr + "，連續 " + consec + " 季正成長");
+    var rVals = qRev.map(function(x) { return x.value || 0; });
+    var rYoys = qRev.map(function(x) { return x.yoy || 0; });
+    var elSvg1 = document.getElementById("usRevBarSvg1");
+    var elSvg2 = document.getElementById("usRevBarSvg2");
+    if (elSvg1) elSvg1.innerHTML = pfBuildBarSvg(rVals, 250, 48, false, "#0f6cbd");
+    if (elSvg2) elSvg2.innerHTML = pfBuildBarSvg(rYoys, 250, 48, true);
+    setVal("usRevD1", qRev[0].date);
+    setVal("usRevD2", lastQ.date);
+    setVal("usRevD3", qRev[0].date);
+    setVal("usRevD4", lastQ.date);
+  } else {
+    setVal("usRevHdrStat", "-");
+    setVal("usRevSubText", "無季度營收資料");
+  }
+
+  var es = info.earnings_surprises || [];
+  if (es.length) {
+    var lastEs = es[es.length - 1];
+    var surp = lastEs.surprise_pct != null ? lastEs.surprise_pct : 0;
+    var surpStr = (surp >= 0 ? "+" : "") + surp.toFixed(1) + "%";
+    var beatCnt = es.filter(function(x) { return (x.surprise_pct || 0) > 0; }).length;
+    setVal("usEpsHdrStat", "EPS $" + (lastEs.actual != null ? lastEs.actual.toFixed(2) : "-") + " (" + surpStr + ")");
+    setVal("usEpsSubText", "最新財報 (" + lastEs.date + ") 實際 $" + (lastEs.actual != null ? lastEs.actual.toFixed(2) : "-") + " vs 預估 $" + (lastEs.estimated != null ? lastEs.estimated.toFixed(2) : "-") + " | 近 " + es.length + " 季中 " + beatCnt + " 季優於預期");
+    var actVals = es.map(function(x) { return x.actual || 0; });
+    var surpVals = es.map(function(x) { return x.surprise_pct || 0; });
+    var eSvg1 = document.getElementById("usEpsBarSvg1");
+    var eSvg2 = document.getElementById("usEpsBarSvg2");
+    if (eSvg1) eSvg1.innerHTML = pfBuildBarSvg(actVals, 250, 48, false, "#0f6cbd");
+    if (eSvg2) eSvg2.innerHTML = pfBuildBarSvg(surpVals, 250, 48, true);
+    setVal("usEpsD1", es[0].date);
+    setVal("usEpsD2", lastEs.date);
+    setVal("usEpsD3", es[0].date);
+    setVal("usEpsD4", lastEs.date);
+  } else {
+    setVal("usEpsHdrStat", "-");
+    setVal("usEpsSubText", "無 EPS 驚喜度資料");
+  }
+
+  var ac = info.analyst_consensus || {};
+  var pt = info.price_target || {};
+  var dcf = info.dcf || {};
+  var sr = info.stock_rating || {};
+  var sb = ac.strong_buy || 0, b = ac.buy || 0, h = ac.hold || 0, s = ac.sell || 0, ss = ac.strong_sell || 0;
+  var totA = sb + b + h + s + ss;
+  setVal("usConsensusHdr", ac.consensus || "-");
+  var barEl = document.getElementById("usConsensusBar");
+  if (barEl && totA > 0) {
+    var buyPct = ((sb + b) / totA * 100).toFixed(1);
+    var holdPct = (h / totA * 100).toFixed(1);
+    var sellPct = ((s + ss) / totA * 100).toFixed(1);
+    barEl.innerHTML =
+      '<div style="width:' + buyPct + '%;background:#d13438;" title="Buy ' + (sb + b) + '"></div>' +
+      '<div style="width:' + holdPct + '%;background:#f59e0b;" title="Hold ' + h + '"></div>' +
+      '<div style="width:' + sellPct + '%;background:#107c10;" title="Sell ' + (s + ss) + '"></div>';
+  } else if (barEl) {
+    barEl.innerHTML = '';
+  }
+  setVal("usConsensusSub", "分析師評級：Strong Buy " + sb + " / Buy " + b + " / Hold " + h + " / Sell " + (s + ss));
+  setVal("usTargetPrice", pt.avg != null ? ("$" + pt.avg.toFixed(2) + (pt.upside_pct != null ? " (" + (pt.upside_pct >= 0 ? "+" : "") + pt.upside_pct.toFixed(1) + "%)" : "")) : "-");
+  setVal("usDcfVal", dcf.value != null ? ("$" + dcf.value.toFixed(2) + (dcf.upside_pct != null ? " (" + (dcf.upside_pct >= 0 ? "+" : "") + dcf.upside_pct.toFixed(1) + "%)" : "")) : "-");
+  setVal("usRatingGrade", sr.grade ? (sr.grade + " (市值 " + pfFmtUsDollar(info.market_cap) + ")") : (info.market_cap ? pfFmtUsDollar(info.market_cap) : "-"));
+
+  setVal("usPE", info.pe_ratio != null ? info.pe_ratio.toFixed(2) : "-");
+  setVal("usPB", info.pb_ratio != null ? info.pb_ratio.toFixed(2) : "-");
+  setVal("usPS", info.price_to_sales != null ? info.price_to_sales.toFixed(2) : "-");
+  setVal("usEvEbitda", info.ev_ebitda != null ? info.ev_ebitda.toFixed(2) : "-");
+  setVal("usEPS", info.eps != null ? "$" + info.eps.toFixed(2) : "-");
+  setVal("usFcfYield", info.fcf_yield != null ? (info.fcf_yield * 100).toFixed(2) + "%" : "-");
+  setVal("usROE", info.roe != null ? (info.roe * 100).toFixed(1) + "%" : "-");
+  setVal("usGrossMargin", info.gross_margin != null ? (info.gross_margin * 100).toFixed(1) + "%" : "-");
+  setVal("usNetMargin", info.net_margin != null ? (info.net_margin * 100).toFixed(1) + "%" : "-");
+}
+
+function renderPfChart(chartBars, isUS) {
+  var container = document.getElementById("sdChartContainer");
+  if (!container || typeof LightweightCharts === "undefined") return;
+
+  if (pfCurrentChart) {
+    pfCurrentChart.remove();
+    pfCurrentChart = null;
+  }
+
+  pfCurrentCandleData = [];
+  var volumeData = [];
+  for (var i = 0; i < chartBars.length; i++) {
+    var row = chartBars[i];
+    pfCurrentCandleData.push({
+      time: row[0],
+      open: row[1],
+      high: row[2],
+      low: row[3],
+      close: row[4]
+    });
+    var isUp = row[4] >= row[1];
+    volumeData.push({
+      time: row[0],
+      value: row[5],
+      color: isUp ? "rgba(209, 52, 56, 0.35)" : "rgba(16, 124, 16, 0.35)"
+    });
+  }
+
+  var chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth || 620,
+    height: 270,
+    layout: {
+      background: { color: "#ffffff" },
+      textColor: "#605e5c",
+      fontSize: 11
+    },
+    grid: {
+      vertLines: { color: "#f3f2f1" },
+      horzLines: { color: "#f3f2f1" }
+    },
+    rightPriceScale: {
+      borderColor: "#edebe9",
+      scaleMargins: { top: 0.08, bottom: 0.22 }
+    },
+    timeScale: {
+      borderColor: "#edebe9",
+      timeVisible: false
+    },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal
+    }
+  });
+  pfCurrentChart = chart;
+
+  var candleSeries = chart.addCandlestickSeries({
+    upColor: "#d13438",
+    downColor: "#107c10",
+    borderUpColor: "#d13438",
+    borderDownColor: "#107c10",
+    wickUpColor: "#d13438",
+    wickDownColor: "#107c10"
+  });
+  candleSeries.setData(pfCurrentCandleData);
+  pfCurrentCandleSeries = candleSeries;
+
+  var ma20 = chart.addLineSeries({ color: "#f59e0b", lineWidth: 1.5, title: "MA20" });
+  ma20.setData(pfCalculateMA(pfCurrentCandleData, 20));
+
+  var ma60 = chart.addLineSeries({ color: "#0f6cbd", lineWidth: 1.5, title: "MA60" });
+  ma60.setData(pfCalculateMA(pfCurrentCandleData, 60));
+
+  var ma120 = chart.addLineSeries({ color: "#8764b8", lineWidth: 1.5, title: "MA120" });
+  ma120.setData(pfCalculateMA(pfCurrentCandleData, 120));
+
+  var volumeSeries = chart.addHistogramSeries({
+    priceFormat: { type: "volume" },
+    priceScaleId: "",
+    scaleMargins: { top: 0.8, bottom: 0 }
+  });
+  volumeSeries.setData(volumeData);
+
+  var total = pfCurrentCandleData.length;
+  chart.timeScale().setVisibleLogicalRange({
+    from: Math.max(0, total - 250),
+    to: total - 1
+  });
+
+  chart.subscribeCrosshairMove(function(param) {
+    if (!param || !param.time || !param.seriesPrices) return;
+    var m20 = param.seriesPrices.get(ma20);
+    var m60 = param.seriesPrices.get(ma60);
+    var m120 = param.seriesPrices.get(ma120);
+    var vol = param.seriesPrices.get(volumeSeries);
+    var elM20 = document.getElementById("legMA20");
+    var elM60 = document.getElementById("legMA60");
+    var elM120 = document.getElementById("legMA120");
+    var elVol = document.getElementById("legVol");
+    var dec = isUS ? 2 : 1;
+    if (elM20 && m20) elM20.textContent = m20.toFixed(dec);
+    if (elM60 && m60) elM60.textContent = m60.toFixed(dec);
+    if (elM120 && m120) elM120.textContent = m120.toFixed(dec);
+    if (elVol && vol) {
+      if (isUS) {
+        elVol.textContent = vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M股" : Math.round(vol / 1e3).toLocaleString() + "K股";
+      } else {
+        elVol.textContent = Math.round(vol / 1000).toLocaleString() + "張";
+      }
+    }
+  });
+}
+
+function setPfChartRange(bars, btn) {
+  if (!pfCurrentChart || !pfCurrentCandleData.length) return;
+  document.querySelectorAll(".sd-range-btn").forEach(function(b) { b.classList.remove("active"); });
+  if (btn) btn.classList.add("active");
+
+  var total = pfCurrentCandleData.length;
+  if (bars === "all") {
+    pfCurrentChart.timeScale().fitContent();
+  } else {
+    pfCurrentChart.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, total - bars),
+      to: total - 1
+    });
+  }
+}
+
+function initPfStockModal() {
+  document.addEventListener("click", function(e) {
+    var card = e.target && e.target.closest ? e.target.closest(".pf-card") : null;
+    if (!card) return;
+    var sym = card.getAttribute("data-symbol");
+    var name = card.getAttribute("data-name");
+    var price = card.getAttribute("data-price");
+    var chg = card.getAttribute("data-change");
+    openPfStockModal(sym, name, price, chg);
+  });
+
+  window.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") closePfStockModal();
+  });
+
+  window.addEventListener("resize", function() {
+    var container = document.getElementById("sdChartContainer");
+    if (pfCurrentChart && container && container.clientWidth > 0) {
+      pfCurrentChart.applyOptions({ width: container.clientWidth });
+    }
+  });
+}
 </script>
 
 <div id="stock-chart-popup" class="stock-popup"></div>
+
+<!-- Portfolio Stock Detail Pop-up Modal -->
+<div id="stockModalBackdrop" class="sd-backdrop" onclick="if(event.target===this)closePfStockModal()">
+  <div id="stockModal" class="sd-modal" role="dialog" aria-modal="true">
+    <div class="sd-header">
+      <div class="sd-title-wrap">
+        <span id="sdStockCode" class="sd-code">-</span>
+        <span id="sdStockName" class="sd-name">-</span>
+      </div>
+      <div class="sd-price-wrap">
+        <span id="sdPrice" class="sd-price">-</span>
+        <span id="sdChange" class="sd-change">-</span>
+      </div>
+      <button class="sd-close-btn" onclick="closePfStockModal()" title="關閉 (Esc)">✕</button>
+    </div>
+    <div class="sd-body">
+      <div id="sdRangeBar" class="sd-range-bar">
+        <button class="sd-range-btn" onclick="setPfChartRange(22, this)">1M</button>
+        <button class="sd-range-btn" onclick="setPfChartRange(66, this)">3M</button>
+        <button class="sd-range-btn" onclick="setPfChartRange(125, this)">6M</button>
+        <button class="sd-range-btn active" onclick="setPfChartRange(250, this)">1Y</button>
+        <button class="sd-range-btn" onclick="setPfChartRange('all', this)">ALL</button>
+      </div>
+      <div id="sdChartContainer" class="sd-chart-box">
+        <div id="sdLoading" class="sd-loading">⏳ 載入 K 線與技術指標中...</div>
+      </div>
+      <div id="sdLegend" class="sd-legend">
+        MA20: <span id="legMA20" style="color:#f59e0b">-</span> |
+        MA60: <span id="legMA60" style="color:#0f6cbd">-</span> |
+        MA120: <span id="legMA120" style="color:#8764b8">-</span> |
+        量: <span id="legVol">-</span>
+      </div>
+
+      <!-- 台股專屬區段 -->
+      <div id="sdTwSections" style="display:flex;flex-direction:column;gap:10px;">
+        <div id="sdTwCardsWrap" style="display:flex;flex-direction:column;gap:10px;">
+          <div class="sd-card">
+            <div class="sd-card-hdr">
+              <span class="sd-card-title">月營收</span>
+              <span id="revHdrStat" class="sd-card-val">-</span>
+            </div>
+            <div id="revSubText" class="sd-card-sub">-</div>
+            <div class="sd-row-2col">
+              <div class="sd-subcol">
+                <div id="revBarSvg1"></div>
+                <div class="sd-dates-row"><span id="revD1">-</span><span id="revD2">-</span></div>
+              </div>
+              <div class="sd-subcol">
+                <div id="revBarSvg2"></div>
+                <div class="sd-dates-row"><span id="revD3">-</span><span id="revD4">-</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sd-card">
+            <div class="sd-card-hdr">
+              <span class="sd-card-title">法人動向</span>
+            </div>
+            <div id="instSubText" class="sd-card-sub">-</div>
+            <div class="sd-row-3col">
+              <div class="sd-subcol">
+                <span class="sd-subcol-title">外資</span>
+                <div id="instForeignSvg"></div>
+                <span id="instForeignStat" class="sd-subcol-stat">-</span>
+              </div>
+              <div class="sd-subcol">
+                <span class="sd-subcol-title">投信</span>
+                <div id="instFundSvg"></div>
+                <span id="instFundStat" class="sd-subcol-stat">-</span>
+              </div>
+              <div class="sd-subcol">
+                <span class="sd-subcol-title">自營商</span>
+                <div id="instDealerSvg"></div>
+                <span id="instDealerStat" class="sd-subcol-stat">-</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sd-card">
+            <div class="sd-card-hdr">
+              <span class="sd-card-title">融資融券</span>
+            </div>
+            <div id="marginSubText" class="sd-card-sub muted" style="line-height:1.5">-</div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--o-text-sub);margin-bottom:6px;">
+              <span>融資使用率 <b id="mUtilVal" style="color:var(--o-text)">-</b></span>
+              <span>券資比 <b id="sUtilVal" style="color:var(--o-text)">-</b></span>
+            </div>
+            <div class="sd-row-2col">
+              <div class="sd-subcol">
+                <div style="font-size:11px;color:var(--o-text-sub)">融資餘額 <span id="mBalVal" style="color:var(--o-text);font-weight:700">-</span></div>
+                <div id="marginLineSvg"></div>
+                <div class="sd-dates-row"><span id="mD1">-</span><span id="mD2">-</span></div>
+              </div>
+              <div class="sd-subcol">
+                <div style="font-size:11px;color:var(--o-text-sub)">融券餘額 <span id="sBalVal" style="color:var(--o-text);font-weight:700">-</span></div>
+                <div id="shortLineSvg"></div>
+                <div class="sd-dates-row"><span id="sD1">-</span><span id="sD2">-</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sd-card">
+            <div class="sd-card-hdr">
+              <span class="sd-card-title">持股分布</span>
+            </div>
+            <div id="holderSubText" class="sd-card-sub muted" style="line-height:1.5">-</div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--o-text-sub);margin-bottom:6px;">
+              <span>總股東數 <b id="hTotalVal" style="color:var(--o-text)">-</b></span>
+              <span>大戶人數 <b id="hBigCountVal" style="color:var(--o-text)">-</b></span>
+            </div>
+            <div class="sd-row-2col">
+              <div class="sd-subcol">
+                <div style="font-size:11px;color:var(--o-text-sub)">零股股東 <span id="hOddVal" style="color:var(--o-text);font-weight:700">-</span></div>
+                <div id="oddLineSvg"></div>
+                <div class="sd-dates-row"><span id="hD1">-</span><span id="hD2">-</span></div>
+              </div>
+              <div class="sd-subcol">
+                <div style="font-size:11px;color:var(--o-text-sub)">大戶持股 <span id="hBigVal" style="color:var(--o-text);font-weight:700">-</span></div>
+                <div id="bigLineSvg"></div>
+                <div class="sd-dates-row"><span id="hD3">-</span><span id="hD4">-</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sd-card">
+            <div class="sd-card-hdr">
+              <span class="sd-card-title">基本面評價</span>
+            </div>
+            <div class="sd-metrics-grid">
+              <div class="sd-metric-item"><div class="sd-metric-lbl">本益比 P/E</div><div id="mPE" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">股價淨值比 P/B</div><div id="mPB" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">殖利率</div><div id="mDiv" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">每股盈餘 EPS</div><div id="mEPS" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">ROE</div><div id="mROE" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">稅後淨利率</div><div id="mNetMargin" class="sd-metric-val">-</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sd-links">
+          <a id="lnkTV" class="sd-ext-link" href="#" target="_blank">TradingView</a>
+          <a id="lnkGoodinfo" class="sd-ext-link" href="#" target="_blank">Goodinfo</a>
+          <a id="lnkYahoo" class="sd-ext-link" href="#" target="_blank">Yahoo 奇摩</a>
+          <a id="lnkWantgoo" class="sd-ext-link" href="#" target="_blank">玩股網</a>
+          <a id="lnkCMoney" class="sd-ext-link" href="#" target="_blank">CMoney 討論</a>
+        </div>
+      </div>
+
+      <!-- 美股專屬區段 -->
+      <div id="sdUsSections" style="display:none;flex-direction:column;gap:10px;">
+        <div id="sdUsCardsWrap" style="display:flex;flex-direction:column;gap:10px;">
+          <div class="sd-card">
+            <div class="sd-card-hdr">
+              <span class="sd-card-title">季度營收 (Quarterly Revenue)</span>
+              <span id="usRevHdrStat" class="sd-card-val">-</span>
+            </div>
+            <div id="usRevSubText" class="sd-card-sub">-</div>
+            <div class="sd-row-2col">
+              <div class="sd-subcol">
+                <span class="sd-subcol-title">單季營收</span>
+                <div id="usRevBarSvg1"></div>
+                <div class="sd-dates-row"><span id="usRevD1">-</span><span id="usRevD2">-</span></div>
+              </div>
+              <div class="sd-subcol">
+                <span class="sd-subcol-title">YoY 年增率 (%)</span>
+                <div id="usRevBarSvg2"></div>
+                <div class="sd-dates-row"><span id="usRevD3">-</span><span id="usRevD4">-</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sd-card">
+            <div class="sd-card-hdr">
+              <span class="sd-card-title">財報盈餘驚喜 (EPS Surprise)</span>
+              <span id="usEpsHdrStat" class="sd-card-val">-</span>
+            </div>
+            <div id="usEpsSubText" class="sd-card-sub muted">-</div>
+            <div class="sd-row-2col">
+              <div class="sd-subcol">
+                <span class="sd-subcol-title">實際 EPS ($)</span>
+                <div id="usEpsBarSvg1"></div>
+                <div class="sd-dates-row"><span id="usEpsD1">-</span><span id="usEpsD2">-</span></div>
+              </div>
+              <div class="sd-subcol">
+                <span class="sd-subcol-title">Surprise (%)</span>
+                <div id="usEpsBarSvg2"></div>
+                <div class="sd-dates-row"><span id="usEpsD3">-</span><span id="usEpsD4">-</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sd-card">
+            <div class="sd-card-hdr">
+              <span class="sd-card-title">華爾街共識與目標估值</span>
+              <span id="usConsensusHdr" class="sd-card-val">-</span>
+            </div>
+            <div id="usConsensusBar" class="sd-consensus-bar"></div>
+            <div id="usConsensusSub" class="sd-card-sub muted" style="margin-bottom:6px;">-</div>
+            <div class="sd-metrics-grid">
+              <div class="sd-metric-item"><div class="sd-metric-lbl">分析師目標價</div><div id="usTargetPrice" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">DCF 合理價</div><div id="usDcfVal" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">量化評等 / 市值</div><div id="usRatingGrade" class="sd-metric-val">-</div></div>
+            </div>
+          </div>
+
+          <div class="sd-card">
+            <div class="sd-card-hdr">
+              <span class="sd-card-title">基本面與獲利指標 (US Fundamentals)</span>
+            </div>
+            <div class="sd-metrics-grid">
+              <div class="sd-metric-item"><div class="sd-metric-lbl">P/E (TTM)</div><div id="usPE" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">P/B</div><div id="usPB" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">P/S</div><div id="usPS" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">EV / EBITDA</div><div id="usEvEbitda" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">EPS (TTM)</div><div id="usEPS" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">FCF Yield</div><div id="usFcfYield" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">ROE</div><div id="usROE" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">毛利率 Gross</div><div id="usGrossMargin" class="sd-metric-val">-</div></div>
+              <div class="sd-metric-item"><div class="sd-metric-lbl">淨利率 Net</div><div id="usNetMargin" class="sd-metric-val">-</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sd-links">
+          <a id="lnkUsTV" class="sd-ext-link" href="#" target="_blank">TradingView</a>
+          <a id="lnkUsFinviz" class="sd-ext-link" href="#" target="_blank">Finviz</a>
+          <a id="lnkUsYahoo" class="sd-ext-link" href="#" target="_blank">Yahoo Finance</a>
+          <a id="lnkUsMacrotrends" class="sd-ext-link" href="#" target="_blank">Macrotrends</a>
+          <a id="lnkUsFutu" class="sd-ext-link" href="#" target="_blank">富途討論</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
 """
