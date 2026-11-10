@@ -26,6 +26,7 @@ import time
 import traceback
 from bs4 import BeautifulSoup as BS
 from zoneinfo import ZoneInfo
+import xml.etree.ElementTree as ET
 
 
 # Initialization
@@ -38,6 +39,7 @@ portfolio_url = os.environ.get('PORTFOLIO_URL')
 yahoo_url = os.environ.get('YAHOO_URL')
 fl_url = os.environ.get('FL_URL')
 ptt_proxy = os.environ.get('PTT_PROXY')  # Optional: e.g. socks5://user:pass@host:port
+mdj_url = os.environ.get('MDJ_URL')
 
 use_ollama = False
 ollama_model = "deepseek-r1:8b"
@@ -3391,6 +3393,72 @@ HTML_TEMPLATE = """
   }
 
   /* ========================================= */
+  /* 大盤即時情緒卡片樣式 (紅漲綠跌) */
+  /* ========================================= */
+  .taiex-card {
+    background: #fdfdfd;
+    border-bottom: 1px solid var(--o-border);
+    padding: 7px 10px;
+    font-size: 12px;
+    line-height: 1.35;
+    user-select: none;
+  }
+  .taiex-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .taiex-badge-score {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .taiex-badge-greed { background: #fde7e9; color: #a80000; border: 1px solid #f1bbbc; font-weight: bold; }
+  .taiex-badge-bull { background: #fde7e9; color: #d13438; border: 1px solid #f1bbbc; }
+  .taiex-badge-neutral { background: #f3f2f1; color: #605e5c; border: 1px solid #edebe9; }
+  .taiex-badge-bear { background: #dff6dd; color: #107c10; border: 1px solid #a7e3a5; }
+  .taiex-badge-fear { background: #dff6dd; color: #0b4d0b; border: 1px solid #a7e3a5; font-weight: bold; }
+  .taiex-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px 8px;
+    margin-top: 4px;
+  }
+  .taiex-grid-cell {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--o-text-sub);
+  }
+  .taiex-divergence-pill {
+    background: #fff4ce;
+    color: #795e00;
+    border: 1px solid #fde38a;
+    border-radius: 4px;
+    padding: 3px 6px;
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .taiex-bar-wrap {
+    height: 4px;
+    background: #e1dfdd;
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 4px 0 2px 0;
+    display: flex;
+  }
+  .taiex-bar-up {
+    background: #d13438;
+    height: 100%;
+  }
+  .taiex-bar-down {
+    background: #107c10;
+    height: 100%;
+  }
+
+  /* ========================================= */
   /* [核心修正] Mobile Mode 強制滿版樣式 */
   /* ========================================= */
   
@@ -3794,6 +3862,11 @@ HTML_TEMPLATE = """
       </div>
 
       <div id="tab-monitor" class="o-tabpane">
+        <!-- 大盤即時情緒與市場寬度卡片 -->
+        <div id="taiex-sentiment-card" class="taiex-card">
+          <div class="text-muted small p-1 text-center">加權指數即時情緒載入中...</div>
+        </div>
+
         <table class="table-custom">
           <thead>
             <tr>
@@ -4738,6 +4811,9 @@ function stopTabFlashing() {
 
 async function updateNotify() {
   try {
+    // 自動同步更新大盤即時情緒 (配合 interval-monitor)
+    updateTaiexSentiment();
+
     const res = await fetch('/api/monitor');
     const data = await res.json();
     document.getElementById('nt-time').innerText = data.timestamp;
@@ -4833,6 +4909,124 @@ async function updateNotify() {
 
   } catch(e) { console.error("Notify Error:", e); }
 }
+
+
+
+
+// =========================================
+// 大盤即時情緒與市場寬度功能 (紅漲綠跌)
+// =========================================
+window._lastTaiexData = null;
+
+async function updateTaiexSentiment() {
+  try {
+    const res = await fetch('/api/taiex_sentiment');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || data.status === 'error') return;
+    window._lastTaiexData = data;
+    renderTaiexSentiment(data);
+  } catch(e) {
+    console.error("Taiex Sentiment Error:", e);
+  }
+}
+
+function renderTaiexSentiment(data) {
+  const container = document.getElementById('taiex-sentiment-card');
+  if (!container || !data || data.status === 'error') return;
+
+  const isCollapsed = localStorage.getItem('taiex_card_collapsed') === '1';
+
+  const chg = data.change || 0;
+  const chgPct = data.change_pct || 0;
+  const isUp = chg > 0;
+  const isDown = chg < 0;
+  const colorClass = isUp ? 'up' : (isDown ? 'down' : 'neutral');
+  const arrow = isUp ? '▲' : (isDown ? '▼' : '');
+  const sign = isUp ? '+' : '';
+
+  const score = data.sentiment_score !== undefined ? data.sentiment_score : 50;
+  let scoreClass = 'taiex-badge-neutral';
+  if (score >= 80) scoreClass = 'taiex-badge-greed';
+  else if (score >= 60) scoreClass = 'taiex-badge-bull';
+  else if (score >= 40) scoreClass = 'taiex-badge-neutral';
+  else if (score >= 20) scoreClass = 'taiex-badge-bear';
+  else scoreClass = 'taiex-badge-fear';
+
+  const b = data.breadth || {};
+  const of = data.order_flow || {};
+  const upRatio = b.up_ratio_pct !== undefined ? b.up_ratio_pct : 50;
+  const downRatio = (100 - upRatio).toFixed(1);
+
+  const netLots = of.net_bid_lots || 0;
+  const netLotsStr = (netLots >= 0 ? '+' : '') + (netLots / 10000).toFixed(1) + '萬張';
+  const netLotsClass = netLots > 0 ? 'up' : (netLots < 0 ? 'down' : 'neutral');
+
+  let alertsHtml = '';
+  if (data.divergence_alerts && data.divergence_alerts.length > 0) {
+    alertsHtml = data.divergence_alerts.map(a => `<div class="taiex-divergence-pill">${a}</div>`).join('');
+  }
+
+  let html = `
+    <div class="taiex-card-header" style="cursor: pointer;" onclick="toggleTaiexCard()" title="點擊切換精簡/展開檢視">
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span style="font-weight: 700; color: var(--o-text);">加權指數</span>
+        <span style="font-weight: 700; font-size: 13px;">${(data.price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+        <span class="${colorClass}" style="font-size: 12px;">${arrow} ${sign}${chg.toFixed(2)} (${sign}${chgPct.toFixed(2)}%)</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span class="taiex-badge-score ${scoreClass}">${(data.regime || '').split(' ')[0]} ${score}</span>
+        <span style="font-size: 10px; color: var(--o-text-sub);">${isCollapsed ? '▼' : '▲'}</span>
+      </div>
+    </div>
+  `;
+
+  if (!isCollapsed) {
+    html += `
+      <div class="taiex-bar-wrap" title="漲跌家數比例: 漲 ${upRatio}% vs 跌 ${downRatio}%">
+        <div class="taiex-bar-up" style="width: ${upRatio}%;"></div>
+        <div class="taiex-bar-down" style="width: ${downRatio}%;"></div>
+      </div>
+      <div class="taiex-grid">
+        <div class="taiex-grid-cell">
+          <span>市場寬度:</span>
+          <span><span class="up">🔴 漲 ${b.up_count || 0}</span> (停 ${b.limit_up || 0}) / <span class="down">🟢 跌 ${b.down_count || 0}</span> (停 ${b.limit_down || 0})</span>
+        </div>
+        <div class="taiex-grid-cell">
+          <span>騰落比 (AD):</span>
+          <span style="font-weight: 600;">${(b.ad_ratio || 0).toFixed(2)}</span>
+        </div>
+        <div class="taiex-grid-cell">
+          <span>淨委買:</span>
+          <span class="${netLotsClass}" style="font-weight: 600;">${netLotsStr}</span>
+        </div>
+        <div class="taiex-grid-cell">
+          <span>主力大單比:</span>
+          <span style="font-weight: 600;">${(of.large_order_ratio || 1).toFixed(2)}x (均買/均賣)</span>
+        </div>
+      </div>
+      ${alertsHtml}
+      ${data.action_guidance ? `<div style="font-size: 11px; color: var(--o-text-sub); margin-top: 4px; border-top: 1px dashed #eee; padding-top: 3px;">💡 ${data.action_guidance}</div>` : ''}
+      <div style="display: flex; justify-content: space-between; font-size: 10px; color: #a19f9d; margin-top: 3px;">
+        <span>預估量: ${data.turnover_billion ? data.turnover_billion.toLocaleString() + '億' : '--'}</span>
+        <span>${data.time || ''}</span>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+}
+
+function toggleTaiexCard() {
+  const current = localStorage.getItem('taiex_card_collapsed') === '1';
+  localStorage.setItem('taiex_card_collapsed', current ? '0' : '1');
+  if (window._lastTaiexData) {
+    renderTaiexSentiment(window._lastTaiexData);
+  } else {
+    updateTaiexSentiment();
+  }
+}
+
 
 
 
@@ -6077,6 +6271,160 @@ def api_reset():
   # 立即重新執行初始化與 MA 計算
   monitor.init_portfolio()
   return jsonify({"status": "ok", "message": "Monitor System Reset Complete (JSON Reloaded, MA Recalculated)."})
+
+
+
+
+_taiex_sentiment_cache = {'data': None, 'time': 0}
+
+
+
+
+################################################################################################################################################################
+def get_taiex_sentiment(session=None):
+  """抓取加權指數即時行情、市場寬度、多空能量計與情緒量化模型 (具備快取)"""
+  global _taiex_sentiment_cache
+  now = time.time()
+  if _taiex_sentiment_cache['data'] is not None and (now - _taiex_sentiment_cache['time']) < 20:
+    return _taiex_sentiment_cache['data']
+
+  try:
+    url = f"{mdj_url.rstrip('/')}/Z/js/SKV/TSE,1/SKVgetv1.djxml?x=1&a=TSE,1&b=0&c=0&d=0"
+    if session:
+      resp = session.get(url, timeout=5)
+    else:
+      resp = requests.get(url, timeout=5)
+
+    if resp.status_code != 200 or not resp.content:
+      return _taiex_sentiment_cache['data']
+
+    root = ET.fromstring(resp.content)
+    data = root.find('Data')
+    if data is None:
+      return _taiex_sentiment_cache['data']
+
+    p = float(data.get('P', 0)) / 100.0
+    pc = float(data.get('PC', 0)) / 100.0
+    chg = p - pc
+    chg_pct = (chg / pc) * 100.0 if pc else 0.0
+    h = float(data.get('H', 0)) / 100.0
+    l = float(data.get('L', 0)) / 100.0
+    clv = (p - l) / (h - l) if (h - l) > 0 else 0.5
+
+    up_cnt = int(data.get('UpS', 0))
+    down_cnt = int(data.get('DownS', 0))
+    upl_cnt = int(data.get('UpLS', 0))
+    downl_cnt = int(data.get('DownLS', 0))
+    total_active = up_cnt + down_cnt
+    up_ratio = (up_cnt / total_active * 100.0) if total_active else 50.0
+    ad_ratio = (up_cnt / down_cnt) if down_cnt > 0 else 99.0
+
+    tbs = int(data.get('TBS', 0))
+    tas = int(data.get('TAS', 0))
+    tbc = int(data.get('TBC', 1))
+    tac = int(data.get('TAC', 1))
+
+    ba_ratio = (tbs / tas) if tas > 0 else 1.0
+    avg_bid = tbs / tbc if tbc > 0 else 0.0
+    avg_ask = tas / tac if tac > 0 else 0.0
+    large_order_ratio = (avg_bid / avg_ask) if avg_ask > 0 else 1.0
+
+    divergence_flags = []
+    if chg > 0 and up_cnt < down_cnt:
+      divergence_flags.append("⚠️ 【拉積盤/指跌背離】指數上漲但下跌家數過半，主力拉權值掩護中小型股出貨！")
+    elif chg < 0 and up_cnt > down_cnt:
+      divergence_flags.append("💎 【壓盤洗籌/指漲背離】指數微跌但上漲家數居多，市場體質強韌，主力暗中吃貨！")
+
+    if chg_pct > 1.0 and clv < 0.35:
+      divergence_flags.append("🚨 【高檔引爆獲利賣壓】早盤大漲但尾盤收近當日最低，留長上影線！")
+    elif chg_pct < -1.0 and clv > 0.65:
+      divergence_flags.append("🔴 【低檔強力承接反彈】早盤重挫但尾盤強拉收高，下影線長！")
+
+    score_breadth = min(max(up_ratio, 0.0), 100.0)
+    score_speculation = min(max(50.0 + (upl_cnt - downl_cnt) * 2.0, 0.0), 100.0)
+    score_orderflow = min(max(50.0 + (ba_ratio - 1.0) * 100.0, 0.0), 100.0)
+    score_clv = clv * 100.0
+
+    sentiment_score = round(
+      score_breadth * 0.40 +
+      score_speculation * 0.25 +
+      score_orderflow * 0.20 +
+      score_clv * 0.15,
+      1
+    )
+
+    if sentiment_score >= 80:
+      regime = "🔥 極度樂觀 (Extreme Greed)"
+      action = "全市場普漲追價熱絡，漲停家數激增。慎防拉高主力獲利了結，嚴禁追高破線股！"
+    elif sentiment_score >= 60:
+      regime = "🔴 偏多主導 (Bullish / Risk-On)"
+      action = "多方佔據優勢，市場廣度健康，個股普遍具備延續力，可順勢操作強勢族群。"
+    elif sentiment_score >= 40:
+      regime = "⚪ 中性拉鋸 (Neutral / Diverged)"
+      action = "多空勢均力敵或結構分化，缺乏明確族群共識，建議縮小部位、高出低進。"
+    elif sentiment_score >= 20:
+      regime = "🟢 偏空防守 (Bearish / Risk-Off)"
+      action = "賣壓沉重，下跌家數佔比高，資金傾向防守避險，嚴格控管曝險降低持股。"
+    else:
+      regime = "❄️ 極度恐慌 (Extreme Fear)"
+      action = "市場出現踩踏拋售與流動性恐慌，跌停家數偏高。短線不宜盲目殺低，準備留意超跌黃金買點！"
+
+    raw_date = data.get('Date', '')
+    raw_time = data.get('T', '')
+    formatted_date = f"{raw_date[:4]}/{raw_date[4:6]}/{raw_date[6:8]}" if len(raw_date) == 8 else raw_date
+    formatted_time = f"{raw_time[:2]}:{raw_time[2:4]}:{raw_time[4:]}" if len(raw_time) == 6 else raw_time
+
+    result = {
+      'status': 'ok',
+      'symbol': '加權指數',
+      'price': p,
+      'change': round(chg, 2),
+      'change_pct': round(chg_pct, 2),
+      'turnover_billion': round(float(data.get('TV', 0)) / 10000.0, 2),
+      'sentiment_score': sentiment_score,
+      'regime': regime,
+      'action_guidance': action,
+      'breadth': {
+        'up_count': up_cnt,
+        'down_count': down_cnt,
+        'up_ratio_pct': round(up_ratio, 1),
+        'ad_ratio': round(ad_ratio, 2),
+        'limit_up': upl_cnt,
+        'limit_down': downl_cnt,
+      },
+      'order_flow': {
+        'bid_volume_lots': tbs,
+        'ask_volume_lots': tas,
+        'net_bid_lots': tbs - tas,
+        'bid_ask_ratio': round(ba_ratio, 2),
+        'avg_bid_lot': round(avg_bid, 2),
+        'avg_ask_lot': round(avg_ask, 2),
+        'large_order_ratio': round(large_order_ratio, 2),
+      },
+      'divergence_alerts': divergence_flags,
+      'time': f"{formatted_date} {formatted_time}".strip()
+    }
+
+    _taiex_sentiment_cache['data'] = result
+    _taiex_sentiment_cache['time'] = now
+    return result
+
+  except Exception as e:
+    print(f"[TAIEX Sentiment] Error fetching market breadth: {e}")
+    if _taiex_sentiment_cache['data'] is not None:
+      return _taiex_sentiment_cache['data']
+    return {'status': 'error', 'message': str(e)}
+
+
+
+
+################################################################################################################################################################
+@app.route("/api/taiex_sentiment")
+def api_taiex_sentiment():
+  res = get_taiex_sentiment()
+  if res is None:
+    return jsonify({'status': 'error', 'message': 'No data'}), 500
+  return jsonify(res)
 
 
 
