@@ -17,7 +17,7 @@ from pyecharts.charts import Bar, Tab
 from pyecharts import options as opts
 from pyecharts.commons.utils import JsCode
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time as dtime
 from curl_cffi import requests
 import numpy as np
 from pyecharts.charts import Line
@@ -45,6 +45,24 @@ use_ollama = False
 ollama_model = "deepseek-r1:8b"
 
 BARS = 200
+
+
+
+
+def is_tw_market_hours(now=None):
+  """判斷當前是否為台股開盤與收盤結算交易時段 (週一至週五 08:30 ~ 14:30 台北時間)"""
+  if now is None:
+    now = datetime.now(ZoneInfo('Asia/Taipei'))
+  elif now.tzinfo is None:
+    now = now.replace(tzinfo=ZoneInfo('Asia/Taipei'))
+  else:
+    now = now.astimezone(ZoneInfo('Asia/Taipei'))
+  if now.weekday() >= 5:
+    return False
+  t = now.time()
+  return dtime(8, 30) <= t <= dtime(14, 30)
+
+
 
 
 app = Flask(__name__)
@@ -2564,6 +2582,11 @@ class StockMonitor:
     self.run_count = 0
     self.news_cache = []
 
+    # === 新增：台股盤中微觀結構訊號快取與交易時段管制 (08:30~14:30) ===
+    self.cached_tw_rows = []
+    self.cached_tw_timestamp = ""
+    self.micro_cache = {}
+
   def ma_calculation(self, ticker):
     # print(f"[DEBUG] Calculating MA for {ticker[0]}...") # Optional trace
     if '&' in ticker[0]:  # Futures (e.g. WTX&) have no query1 daily history
@@ -3084,6 +3107,78 @@ class StockMonitor:
 
 
 
+  def get_stock_micro_signal(self, symbol):
+    """
+    抓取台股個股五檔外盤比 (Level-2 Outer Ratio) 與 ETF 即時折溢價
+    在台股開盤時段 (08:30~14:30) 查詢並快取 30 秒；非交易時段重複使用最後快取
+    """
+    now_ts = time.time()
+    in_tw_hours = is_tw_market_hours()
+    if symbol in self.micro_cache:
+      cached_tag, cached_time = self.micro_cache[symbol]
+      if not in_tw_hours or (now_ts - cached_time) < 30:
+        return cached_tag
+
+    if not in_tw_hours and symbol in self.micro_cache:
+      return self.micro_cache[symbol][0]
+
+    tags = []
+    code = symbol.split('.')[0]
+    headers = {'User-Agent': 'Mozilla/5.0'}
+
+    # 1. Level-2 五檔外盤比 (Outer Ratio) via SKV
+    try:
+      url_skv = f"{mdj_url.rstrip('/')}/Z/js/SKV/{code},1/SKVgetv1.djxml?x=1&a={code},1&b=0&c=0&d=0"
+      r = self.session.get(url_skv, headers=headers, timeout=2)
+      if r.status_code == 200 and r.content:
+        root = ET.fromstring(r.content)
+        d = root.find('Data')
+        if d is not None:
+          in_vol = int(d.get('IS', 0))
+          out_vol = int(d.get('OS', 0))
+          tot = in_vol + out_vol
+          if tot > 0:
+            outer_ratio = round(out_vol / tot * 100.0, 1)
+            if outer_ratio >= 60.0:
+              tags.append(f'<span class="up" title="外盤比 {outer_ratio}% (主動買盤積極吃單)">🔴外盤 {outer_ratio:.0f}%</span>')
+            elif outer_ratio <= 40.0:
+              tags.append(f'<span class="down" title="外盤比 {outer_ratio}% (主動賣盤直接倒貨)">🟢外盤 {outer_ratio:.0f}%</span>')
+            else:
+              tags.append(f'<span class="neutral" title="外盤比 {outer_ratio}%">⚪外盤 {outer_ratio:.0f}%</span>')
+    except Exception:
+      pass
+
+    # 2. ETF 即時折溢價 (若為 ETF 代碼如 00xxx)
+    if code.startswith('00'):
+      try:
+        url_nav = f"https://www.moneydj.com/etf/x/basic/basic0003.xdjhtm?etfid={code}.TW"
+        r_nav = self.session.get(url_nav, headers=headers, timeout=2)
+        r_nav.encoding = 'utf-8'
+        soup_nav = BS(r_nav.text, 'html.parser')
+        for tbl in soup_nav.find_all('table', class_='datalist'):
+          if '折溢價' in tbl.get_text() and '淨值' in tbl.get_text():
+            rows = tbl.find_all('tr')
+            if len(rows) > 1:
+              cols = [c.get_text(strip=True) for c in rows[1].find_all(['td', 'th'])]
+              if len(cols) >= 4:
+                diff_pct = float(cols[3].replace('%', '').replace(',', ''))
+                if diff_pct >= 1.0:
+                  tags.append(f'<span class="down" title="即時溢價率 +{diff_pct:.2f}% (市價高於淨值，追高風險)">⚠️溢價+{diff_pct:.1f}%</span>')
+                elif diff_pct <= -0.8:
+                  tags.append(f'<span class="up" title="即時折價率 {diff_pct:.2f}% (市價低於淨值，折價收斂反彈買點)">💎折價{diff_pct:.1f}%</span>')
+                else:
+                  tags.append(f'<span class="neutral" title="折溢價率 {diff_pct:+.2f}%">折溢{diff_pct:+.1f}%</span>')
+            break
+      except Exception:
+        pass
+
+    result_tag = " ".join(tags)
+    self.micro_cache[symbol] = (result_tag, now_ts)
+    return result_tag
+
+
+
+
   def run_check(self):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Starting Monitor run_check (Count: {self.run_count})")
     if not self.initialized:
@@ -3116,6 +3211,16 @@ class StockMonitor:
     if self.run_count % 30 == 0:
       self._ptt_scrape_blocked = False
       self._pttweb_blocked = False
+
+    in_tw_hours = is_tw_market_hours()
+    tw_symbols = [p[0] for p in self.portfolio if p[0].endswith('.TW') or p[0].endswith('.TWO') or p[0] == 'WTX&']
+    all_tw = (len(tw_symbols) == len(self.portfolio))
+    if not in_tw_hours and self.cached_tw_rows and all_tw:
+      return {
+        "timestamp": f"{self.cached_tw_timestamp} (收盤)",
+        "rows": self.cached_tw_rows,
+        "news": self.news_cache
+      }
     
     chunk_len = 20
     for c in range(0, len(self.portfolio), chunk_len):
@@ -3191,14 +3296,21 @@ class StockMonitor:
                 # cross_msg = self.check_signals(i, price, price_1)
                 # if cross_msg: alert_msgs.append(cross_msg)
 
+                # 取得外盤比 / ETF 折溢價微觀訊號
+                micro_signal = ""
+                if symbol.endswith('.TW') or symbol.endswith('.TWO'):
+                  micro_signal = self.get_stock_micro_signal(symbol)
+
                 # 2. 合併為字串 (移除隱藏邏輯，直接顯示)
                 display_alert = " ".join(alert_msgs)
                 additional_alert = self.check_signals(i, price, price_1)
                 
-                # 3. 組合最終 alert (用 <br> 分隔,不需要 alert_style 了)
+                # 3. 組合最終 alert (微觀結構外盤/折溢價放前綴，<br> 分隔指標)
                 final_alert = ""
+                if micro_signal:
+                  final_alert = micro_signal
                 if display_alert:
-                  final_alert = display_alert
+                  final_alert = f"{final_alert} {display_alert}".strip()
                 if additional_alert:
                   if final_alert:
                     final_alert += "<br>" + additional_alert
@@ -3254,11 +3366,14 @@ class StockMonitor:
       self.news_cache = ticker_news + self.get_ptt_news(keywords) +  self.get_ptt_authors("Stock", self.author_list)
       print(f"[DEBUG] Total News Found: {len(self.news_cache)}")
     
+    cur_time_str = datetime.now(ZoneInfo('Asia/Taipei')).strftime('%H:%M:%S')
+    self.cached_tw_rows = rows
+    self.cached_tw_timestamp = cur_time_str
     self.run_count += 1
     # === 修改結束 ===
 
     return {
-      "timestamp": datetime.now(ZoneInfo('Asia/Taipei')).strftime('%H:%M:%S'),
+      "timestamp": cur_time_str if in_tw_hours else f"{cur_time_str} (收盤)",
       "rows": rows,
       "news": self.news_cache  # 這裡改成回傳 cache
     }
@@ -4920,6 +5035,20 @@ window._lastTaiexData = null;
 
 async function updateTaiexSentiment() {
   try {
+    // 檢查客戶端是否處於台北時間 08:30 ~ 14:30
+    const nowTaipei = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Taipei"}));
+    const day = nowTaipei.getDay();
+    const hours = nowTaipei.getHours();
+    const minutes = nowTaipei.getMinutes();
+    const timeVal = hours * 100 + minutes;
+    const isTradingHours = (day >= 1 && day <= 5) && (timeVal >= 830 && timeVal <= 1430);
+
+    // 非開盤時段且已有快取資料，直接重繪現有資料，不重複發送請求
+    if (!isTradingHours && window._lastTaiexData) {
+      renderTaiexSentiment(window._lastTaiexData);
+      return;
+    }
+
     const res = await fetch('/api/taiex_sentiment');
     if (!res.ok) return;
     const data = await res.json();
@@ -4953,10 +5082,34 @@ function renderTaiexSentiment(data) {
   else if (score >= 20) scoreClass = 'taiex-badge-bear';
   else scoreClass = 'taiex-badge-fear';
 
+  // 取得期貨、OTC 與類股資金數據
+  const fut = data.futures || {};
+  const otc = data.otc || {};
+  const tb = data.total_breadth || {};
   const b = data.breadth || {};
   const of = data.order_flow || {};
-  const upRatio = b.up_ratio_pct !== undefined ? b.up_ratio_pct : 50;
-  const downRatio = (100 - upRatio).toFixed(1);
+  const sf = data.sector_flows || {};
+  const tv = data.turnover || {};
+  const tvLabel = data.is_market_open ? '預估成交量' : '成交金額';
+  const tvText = tv.total_billion ?
+    `${tvLabel}: 上市 ${tv.tse_billion.toLocaleString()}億 / 櫃買 ${tv.otc_billion.toLocaleString()}億 (合計 ${tv.total_billion.toLocaleString()}億)` :
+    `${tvLabel}: ${data.turnover_billion ? data.turnover_billion.toLocaleString() + '億' : '--'}`;
+
+  const totalUpRatio = tb.total_up_ratio !== undefined ? tb.total_up_ratio : 50;
+  const totalDownRatio = (100 - totalUpRatio).toFixed(1);
+
+  // 台指期與價差
+  const futPrice = fut.price ? fut.price.toLocaleString() : '--';
+  const basis = fut.basis !== undefined ? fut.basis : 0;
+  const basisClass = basis > 0 ? 'up' : (basis < 0 ? 'down' : 'neutral');
+  const basisSign = basis > 0 ? '+' : '';
+
+  // 櫃買指數
+  const otcPrice = otc.price ? otc.price.toFixed(2) : '--';
+  const otcChg = otc.change || 0;
+  const otcChgPct = otc.change_pct || 0;
+  const otcClass = otcChg > 0 ? 'up' : (otcChg < 0 ? 'down' : 'neutral');
+  const otcSign = otcChg > 0 ? '+' : '';
 
   const netLots = of.net_bid_lots || 0;
   const netLotsStr = (netLots >= 0 ? '+' : '') + (netLots / 10000).toFixed(1) + '萬張';
@@ -4967,14 +5120,25 @@ function renderTaiexSentiment(data) {
     alertsHtml = data.divergence_alerts.map(a => `<div class="taiex-divergence-pill">${a}</div>`).join('');
   }
 
+  const marketBadge = data.is_market_open ?
+    `<span class="taiex-badge-score taiex-badge-neutral" style="font-size:10px; color:#107c10; border-color:#a7e3a5; background:#edf9ec;">🟢 盤中</span>` :
+    `<span class="taiex-badge-score taiex-badge-neutral" style="font-size:10px; color:#605e5c;">💤 盤後</span>`;
+
   let html = `
     <div class="taiex-card-header" style="cursor: pointer;" onclick="toggleTaiexCard()" title="點擊切換精簡/展開檢視">
-      <div style="display: flex; align-items: center; gap: 6px;">
-        <span style="font-weight: 700; color: var(--o-text);">加權指數</span>
+      <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+        <span style="font-weight: 700; color: var(--o-text);">加權</span>
         <span style="font-weight: 700; font-size: 13px;">${(data.price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
         <span class="${colorClass}" style="font-size: 12px;">${arrow} ${sign}${chg.toFixed(2)} (${sign}${chgPct.toFixed(2)}%)</span>
+        <span style="color: #bbb;">|</span>
+        <span style="color: var(--o-text-sub); font-size: 11px;">台指期 ${futPrice}</span>
+        <span class="${basisClass}" style="font-size: 11px; font-weight:600;" title="${fut.basis_status || ''}">(${basisSign}${basis}點)</span>
+        <span style="color: #bbb;">|</span>
+        <span style="color: var(--o-text-sub); font-size: 11px;">櫃買 ${otcPrice}</span>
+        <span class="${otcClass}" style="font-size: 11px;">(${otcSign}${otcChgPct.toFixed(2)}%)</span>
       </div>
       <div style="display: flex; align-items: center; gap: 6px;">
+        ${marketBadge}
         <span class="taiex-badge-score ${scoreClass}">${(data.regime || '').split(' ')[0]} ${score}</span>
         <span style="font-size: 10px; color: var(--o-text-sub);">${isCollapsed ? '▼' : '▲'}</span>
       </div>
@@ -4983,33 +5147,41 @@ function renderTaiexSentiment(data) {
 
   if (!isCollapsed) {
     html += `
-      <div class="taiex-bar-wrap" title="漲跌家數比例: 漲 ${upRatio}% vs 跌 ${downRatio}%">
-        <div class="taiex-bar-up" style="width: ${upRatio}%;"></div>
-        <div class="taiex-bar-down" style="width: ${downRatio}%;"></div>
+      <div class="taiex-bar-wrap" title="全市場漲跌比例: 漲 ${totalUpRatio}% vs 跌 ${totalDownRatio}%">
+        <div class="taiex-bar-up" style="width: ${totalUpRatio}%;"></div>
+        <div class="taiex-bar-down" style="width: ${totalDownRatio}%;"></div>
       </div>
       <div class="taiex-grid">
         <div class="taiex-grid-cell">
-          <span>市場寬度:</span>
-          <span><span class="up">🔴 漲 ${b.up_count || 0}</span> (停 ${b.limit_up || 0}) / <span class="down">🟢 跌 ${b.down_count || 0}</span> (停 ${b.limit_down || 0})</span>
+          <span>全市場寬度:</span>
+          <span><span class="up">🔴 漲 ${tb.total_up || 0}</span> (停 ${tb.total_upl || 0}) / <span class="down">🟢 跌 ${tb.total_down || 0}</span> (停 ${tb.total_downl || 0})</span>
         </div>
         <div class="taiex-grid-cell">
-          <span>騰落比 (AD):</span>
-          <span style="font-weight: 600;">${(b.ad_ratio || 0).toFixed(2)}</span>
+          <span>期現價差:</span>
+          <span class="${basisClass}" style="font-weight: 600;">${basisSign}${basis} 點 (${fut.basis_status || ''})</span>
+        </div>
+        <div class="taiex-grid-cell">
+          <span>上市/櫃買騰落:</span>
+          <span style="font-weight: 600;">TSE ${(b.ad_ratio || 0).toFixed(2)} / OTC ${(otc.ad_ratio || 0).toFixed(2)}</span>
+        </div>
+        <div class="taiex-grid-cell">
+          <span>電子資金佔比:</span>
+          <span style="font-weight: 600;">${sf.elec_status || '--'}</span>
         </div>
         <div class="taiex-grid-cell">
           <span>淨委買:</span>
-          <span class="${netLotsClass}" style="font-weight: 600;">${netLotsStr}</span>
+          <span class="${netLotsClass}" style="font-weight: 600;">${netLotsStr} (大單 ${(of.large_order_ratio || 1).toFixed(2)}x)</span>
         </div>
         <div class="taiex-grid-cell">
-          <span>主力大單比:</span>
-          <span style="font-weight: 600;">${(of.large_order_ratio || 1).toFixed(2)}x (均買/均賣)</span>
+          <span>資金熱門 TOP 3:</span>
+          <span style="font-weight: 500; font-size: 10px;" title="${sf.top_sectors_str || ''}">${sf.top_sectors_str || '--'}</span>
         </div>
       </div>
       ${alertsHtml}
       ${data.action_guidance ? `<div style="font-size: 11px; color: var(--o-text-sub); margin-top: 4px; border-top: 1px dashed #eee; padding-top: 3px;">💡 ${data.action_guidance}</div>` : ''}
-      <div style="display: flex; justify-content: space-between; font-size: 10px; color: #a19f9d; margin-top: 3px;">
-        <span>預估量: ${data.turnover_billion ? data.turnover_billion.toLocaleString() + '億' : '--'}</span>
-        <span>${data.time || ''}</span>
+      <div style="display: flex; justify-content: space-between; font-size: 10px; color: #a19f9d; margin-top: 3px; flex-wrap: wrap; gap: 4px;">
+        <span>${tvText}</span>
+        <span>更新時間: ${data.time || ''} ${data.is_market_open ? '' : '(收盤)'}</span>
       </div>
     `;
   }
@@ -6268,6 +6440,10 @@ def api_sparkline(symbol):
 def api_reset():
   print("[DEBUG] API Request - Reset Monitor")
   monitor.initialized = False
+  monitor.cached_tw_rows = []
+  monitor.micro_cache = {}
+  global _taiex_sentiment_cache
+  _taiex_sentiment_cache = {'data': None, 'time': 0}
   # 立即重新執行初始化與 MA 計算
   monitor.init_portfolio()
   return jsonify({"status": "ok", "message": "Monitor System Reset Complete (JSON Reloaded, MA Recalculated)."})
@@ -6282,66 +6458,194 @@ _taiex_sentiment_cache = {'data': None, 'time': 0}
 
 ################################################################################################################################################################
 def get_taiex_sentiment(session=None):
-  """抓取加權指數即時行情、市場寬度、多空能量計與情緒量化模型 (具備快取)"""
+  """抓取加權指數、台指期即時價差、櫃買OTC市場寬度、類股資金流向與多空情緒量化模型 (具備開盤時段管制與快取)"""
   global _taiex_sentiment_cache
   now = time.time()
-  if _taiex_sentiment_cache['data'] is not None and (now - _taiex_sentiment_cache['time']) < 20:
-    return _taiex_sentiment_cache['data']
+  in_tw_hours = is_tw_market_hours()
+
+  # 若已快取資料：
+  # 1) 若在開盤時段 (08:30 ~ 14:30)，快取有效時間為 20 秒
+  # 2) 若在非開盤時段 (閉盤/夜間/週末)，直接回傳快取資料，不再向 MoneyDJ 發送請求！
+  if _taiex_sentiment_cache['data'] is not None:
+    if not in_tw_hours:
+      return _taiex_sentiment_cache['data']
+    elif (now - _taiex_sentiment_cache['time']) < 20:
+      return _taiex_sentiment_cache['data']
+
+  req_sess = session or requests.Session()
 
   try:
-    url = f"{mdj_url.rstrip('/')}/Z/js/SKV/TSE,1/SKVgetv1.djxml?x=1&a=TSE,1&b=0&c=0&d=0"
-    if session:
-      resp = session.get(url, timeout=5)
-    else:
-      resp = requests.get(url, timeout=5)
-
-    if resp.status_code != 200 or not resp.content:
+    # 1. 加權指數即時行情 (TSE,1)
+    url_tse = f"{mdj_url.rstrip('/')}/Z/js/SKV/TSE,1/SKVgetv1.djxml?x=1&a=TSE,1&b=0&c=0&d=0"
+    resp_tse = req_sess.get(url_tse, timeout=4)
+    if resp_tse.status_code != 200 or not resp_tse.content:
       return _taiex_sentiment_cache['data']
 
-    root = ET.fromstring(resp.content)
-    data = root.find('Data')
-    if data is None:
+    root_tse = ET.fromstring(resp_tse.content)
+    data_tse = root_tse.find('Data')
+    if data_tse is None:
       return _taiex_sentiment_cache['data']
 
-    p = float(data.get('P', 0)) / 100.0
-    pc = float(data.get('PC', 0)) / 100.0
+    p = float(data_tse.get('P', 0)) / 100.0
+    pc = float(data_tse.get('PC', 0)) / 100.0
     chg = p - pc
     chg_pct = (chg / pc) * 100.0 if pc else 0.0
-    h = float(data.get('H', 0)) / 100.0
-    l = float(data.get('L', 0)) / 100.0
+    h = float(data_tse.get('H', 0)) / 100.0
+    l = float(data_tse.get('L', 0)) / 100.0
     clv = (p - l) / (h - l) if (h - l) > 0 else 0.5
 
-    up_cnt = int(data.get('UpS', 0))
-    down_cnt = int(data.get('DownS', 0))
-    upl_cnt = int(data.get('UpLS', 0))
-    downl_cnt = int(data.get('DownLS', 0))
+    up_cnt = int(data_tse.get('UpS', 0))
+    down_cnt = int(data_tse.get('DownS', 0))
+    upl_cnt = int(data_tse.get('UpLS', 0))
+    downl_cnt = int(data_tse.get('DownLS', 0))
     total_active = up_cnt + down_cnt
     up_ratio = (up_cnt / total_active * 100.0) if total_active else 50.0
     ad_ratio = (up_cnt / down_cnt) if down_cnt > 0 else 99.0
 
-    tbs = int(data.get('TBS', 0))
-    tas = int(data.get('TAS', 0))
-    tbc = int(data.get('TBC', 1))
-    tac = int(data.get('TAC', 1))
+    tbs = int(data_tse.get('TBS', 0))
+    tas = int(data_tse.get('TAS', 0))
+    tbc = int(data_tse.get('TBC', 1))
+    tac = int(data_tse.get('TAC', 1))
 
     ba_ratio = (tbs / tas) if tas > 0 else 1.0
     avg_bid = tbs / tbc if tbc > 0 else 0.0
     avg_ask = tas / tac if tac > 0 else 0.0
     large_order_ratio = (avg_bid / avg_ask) if avg_ask > 0 else 1.0
 
+    # 2. 台指期近月即時行情與基差 (TX,3)
+    tx_p = 0.0
+    tx_chg = 0.0
+    tx_chg_pct = 0.0
+    tx_vol = 0
+    basis = 0.0
+    basis_status = "中性價差"
+    try:
+      url_tx = f"{mdj_url.rstrip('/')}/Z/js/SKV/TX,3/SKVgetv1.djxml?x=1&a=TX,3&b=0&c=0&d=0"
+      resp_tx = req_sess.get(url_tx, timeout=3)
+      if resp_tx.status_code == 200 and resp_tx.content:
+        root_tx = ET.fromstring(resp_tx.content)
+        data_tx = root_tx.find('Data')
+        if data_tx is not None:
+          tx_p = float(data_tx.get('P', 0)) / 100.0
+          tx_pc = float(data_tx.get('PC', 0)) / 100.0
+          tx_chg = tx_p - tx_pc
+          tx_chg_pct = (tx_chg / tx_pc) * 100.0 if tx_pc else 0.0
+          tx_vol = int(data_tx.get('V', 0))
+          if tx_p > 0 and p > 0:
+            basis = round(tx_p - p, 2)
+            if basis >= 30:
+              basis_status = f"大額正價差 (+{basis:.1f}點) 軋空推升"
+            elif basis <= -40:
+              basis_status = f"深度逆價差 ({basis:.1f}點) 避險貼水"
+            else:
+              basis_status = f"{basis:+.1f}點"
+    except Exception:
+      pass
+
+    # 3. 櫃買指數即時市場寬度 (OTC,1)
+    otc_p = 0.0
+    otc_chg = 0.0
+    otc_chg_pct = 0.0
+    otc_up = 0
+    otc_down = 0
+    otc_upl = 0
+    otc_downl = 0
+    otc_ad = 1.0
+    try:
+      url_otc = f"{mdj_url.rstrip('/')}/Z/js/SKV/OTC,1/SKVgetv1.djxml?x=1&a=OTC,1&b=0&c=0&d=0"
+      resp_otc = req_sess.get(url_otc, timeout=3)
+      if resp_otc.status_code == 200 and resp_otc.content:
+        root_otc = ET.fromstring(resp_otc.content)
+        data_otc = root_otc.find('Data')
+        if data_otc is not None:
+          otc_p = float(data_otc.get('P', 0)) / 100.0
+          otc_pc = float(data_otc.get('PC', 0)) / 100.0
+          otc_chg = otc_p - otc_pc
+          otc_chg_pct = (otc_chg / otc_pc) * 100.0 if otc_pc else 0.0
+          otc_up = int(data_otc.get('UpS', 0))
+          otc_down = int(data_otc.get('DownS', 0))
+          otc_upl = int(data_otc.get('UpLS', 0))
+          otc_downl = int(data_otc.get('DownLS', 0))
+          otc_ad = round(otc_up / otc_down, 2) if otc_down > 0 else 99.0
+    except Exception:
+      pass
+
+    # 4. 類股即時資金流向 (Sector flows)
+    elec_pct = 0.0
+    elec_status = "常態輪動"
+    top_sectors_str = ""
+    try:
+      url_sec = f"{mdj_url.rstrip('/')}/z/zba.djhtm?ASPID=sysjust"
+      resp_sec = req_sess.get(url_sec, timeout=3)
+      if resp_sec.status_code == 200 and resp_sec.content:
+        html_sec = resp_sec.content.decode('cp950', errors='ignore')
+        soup_sec = BS(html_sec, 'html.parser')
+        tables = soup_sec.find_all('table')
+        target_tbl = tables[2] if len(tables) > 2 else (tables[0] if tables else None)
+        tse_list = []
+        if target_tbl:
+          for tr in target_tbl.find_all('tr'):
+            txt = tr.get_text()
+            if '上櫃資金流向表' in txt or '資金流向明細圖' in txt:
+              break
+            tds = [td.text.strip() for td in tr.find_all('td') if td.text.strip()]
+            for i in range(0, len(tds) - 1, 2):
+              name = tds[i]
+              val = tds[i + 1]
+              if val.endswith('%'):
+                try:
+                  tse_list.append((name, float(val.replace('%', ''))))
+                except:
+                  pass
+        tse_list.sort(key=lambda x: x[1], reverse=True)
+        elec_pct = next((x[1] for x in tse_list if x[0] == '電子'), 0.0)
+        if elec_pct >= 70.0:
+          elec_status = f"🔥 電子吸金攻擊盤 ({elec_pct:.1f}%)"
+        elif elec_pct <= 55.0 and elec_pct > 0:
+          elec_status = f"⚠️ 電子資金外溢 ({elec_pct:.1f}%)"
+        else:
+          elec_status = f"⚪ 電子常態輪動 ({elec_pct:.1f}%)"
+        top_list = [f"{x[0]} {x[1]:.1f}%" for x in tse_list if x[0] != '電子'][:3]
+        top_sectors_str = " | ".join(top_list)
+    except Exception:
+      pass
+
+    # 5. 全市場總寬度 (TSE + OTC)
+    total_up = up_cnt + otc_up
+    total_down = down_cnt + otc_down
+    total_upl = upl_cnt + otc_upl
+    total_downl = downl_cnt + otc_downl
+    total_ad = round(total_up / total_down, 2) if total_down > 0 else 99.0
+    total_up_ratio = round(total_up / (total_up + total_down) * 100.0, 1) if (total_up + total_down) else 50.0
+
+    # 6. 即時背離與動能訊號
     divergence_flags = []
     if chg > 0 and up_cnt < down_cnt:
-      divergence_flags.append("⚠️ 【拉積盤/指跌背離】指數上漲但下跌家數過半，主力拉權值掩護中小型股出貨！")
+      divergence_flags.append("⚠️ 【拉積盤/指跌背離】加權上漲但下跌家數過半，主力拉權值掩護中小型股出貨！")
     elif chg < 0 and up_cnt > down_cnt:
-      divergence_flags.append("💎 【壓盤洗籌/指漲背離】指數微跌但上漲家數居多，市場體質強韌，主力暗中吃貨！")
+      divergence_flags.append("💎 【壓盤洗籌/指漲背離】加權微跌但上漲家數居多，市場體質強韌，主力暗中吃貨！")
+
+    if chg > 0 and otc_chg < 0 and otc_up < otc_down:
+      divergence_flags.append("⚠️ 【拉大出小/中小型失血】加權上漲但櫃買下跌且家數普跌，主力護權值掩護中小型提款！")
+    elif otc_chg_pct > (chg_pct + 0.5) and otc_upl >= 15:
+      divergence_flags.append(f"🚀 【內資狂熱/中小型衝刺】櫃買動能顯著強於大盤，中小型漲停達 {otc_upl} 檔，內資主力積極主導！")
+
+    if basis >= 30:
+      divergence_flags.append(f"🔴 【期現大額正價差】台指期大幅溢價 +{basis:.1f} 點，期貨大戶極度偏多軋空！")
+    elif basis <= -40:
+      divergence_flags.append(f"🟢 【期現深度逆價差】台指期逆價差達 {basis:.1f} 點，期貨避險偏空賣壓沉重！")
+
+    if elec_pct <= 55.0 and elec_pct > 0:
+      divergence_flags.append(f"⚠️ 【電子資金外溢】電子成交比重降至 {elec_pct:.1f}% (<55%)，資金轉向非電族群，電子易盤整！")
 
     if chg_pct > 1.0 and clv < 0.35:
       divergence_flags.append("🚨 【高檔引爆獲利賣壓】早盤大漲但尾盤收近當日最低，留長上影線！")
     elif chg_pct < -1.0 and clv > 0.65:
       divergence_flags.append("🔴 【低檔強力承接反彈】早盤重挫但尾盤強拉收高，下影線長！")
 
-    score_breadth = min(max(up_ratio, 0.0), 100.0)
-    score_speculation = min(max(50.0 + (upl_cnt - downl_cnt) * 2.0, 0.0), 100.0)
+    # 7. 情緒評分模型
+    score_breadth = min(max(total_up_ratio, 0.0), 100.0)
+    score_speculation = min(max(50.0 + (total_upl - total_downl) * 2.0, 0.0), 100.0)
     score_orderflow = min(max(50.0 + (ba_ratio - 1.0) * 100.0, 0.0), 100.0)
     score_clv = clv * 100.0
 
@@ -6369,10 +6673,14 @@ def get_taiex_sentiment(session=None):
       regime = "❄️ 極度恐慌 (Extreme Fear)"
       action = "市場出現踩踏拋售與流動性恐慌，跌停家數偏高。短線不宜盲目殺低，準備留意超跌黃金買點！"
 
-    raw_date = data.get('Date', '')
-    raw_time = data.get('T', '')
+    raw_date = data_tse.get('Date', '')
+    raw_time = data_tse.get('T', '')
     formatted_date = f"{raw_date[:4]}/{raw_date[4:6]}/{raw_date[6:8]}" if len(raw_date) == 8 else raw_date
     formatted_time = f"{raw_time[:2]}:{raw_time[2:4]}:{raw_time[4:]}" if len(raw_time) == 6 else raw_time
+
+    tse_tv = round(float(data_tse.get('TV', 0)) / 10000.0, 1)
+    otc_tv = round(float(data_otc.get('TV', 0)) / 10000.0, 1) if data_otc is not None else 0.0
+    total_tv = round(tse_tv + otc_tv, 1)
 
     result = {
       'status': 'ok',
@@ -6380,10 +6688,17 @@ def get_taiex_sentiment(session=None):
       'price': p,
       'change': round(chg, 2),
       'change_pct': round(chg_pct, 2),
-      'turnover_billion': round(float(data.get('TV', 0)) / 10000.0, 2),
+      'turnover': {
+        'tse_billion': tse_tv,
+        'otc_billion': otc_tv,
+        'total_billion': total_tv,
+      },
+      'turnover_billion': tse_tv,
       'sentiment_score': sentiment_score,
       'regime': regime,
       'action_guidance': action,
+      'is_market_open': in_tw_hours,
+      'market_status': '🟢 盤中即時' if in_tw_hours else '💤 已收盤 (08:30-14:30更新)',
       'breadth': {
         'up_count': up_cnt,
         'down_count': down_cnt,
@@ -6391,6 +6706,39 @@ def get_taiex_sentiment(session=None):
         'ad_ratio': round(ad_ratio, 2),
         'limit_up': upl_cnt,
         'limit_down': downl_cnt,
+      },
+      'futures': {
+        'symbol': '台指期近月',
+        'price': tx_p,
+        'change': round(tx_chg, 2),
+        'change_pct': round(tx_chg_pct, 2),
+        'volume': tx_vol,
+        'basis': basis,
+        'basis_status': basis_status,
+      },
+      'otc': {
+        'symbol': '櫃買指數',
+        'price': otc_p,
+        'change': round(otc_chg, 2),
+        'change_pct': round(otc_chg_pct, 2),
+        'up_count': otc_up,
+        'down_count': otc_down,
+        'limit_up': otc_upl,
+        'limit_down': otc_downl,
+        'ad_ratio': otc_ad,
+      },
+      'total_breadth': {
+        'total_up': total_up,
+        'total_down': total_down,
+        'total_upl': total_upl,
+        'total_downl': total_downl,
+        'total_ad': total_ad,
+        'total_up_ratio': total_up_ratio,
+      },
+      'sector_flows': {
+        'elec_pct': round(elec_pct, 1),
+        'elec_status': elec_status,
+        'top_sectors_str': top_sectors_str,
       },
       'order_flow': {
         'bid_volume_lots': tbs,
