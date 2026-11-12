@@ -5127,7 +5127,7 @@ function renderTaiexSentiment(data) {
   }
 
   const marketBadge = data.is_market_open ?
-    `<span class="taiex-badge-score taiex-badge-neutral" style="font-size:10px; color:#107c10; border-color:#a7e3a5; background:#edf9ec;">🟢 盤中</span>` :
+    `<span class="taiex-badge-score taiex-badge-neutral" style="font-size:10px; color:#107c10; border-color:#a7e3a5; background:#edf9ec;">📊 盤中</span>` :
     `<span class="taiex-badge-score taiex-badge-neutral" style="font-size:10px; color:#605e5c;">💤 盤後</span>`;
 
   let html = `
