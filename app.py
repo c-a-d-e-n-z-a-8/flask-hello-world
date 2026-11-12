@@ -3213,7 +3213,7 @@ class StockMonitor:
       self._pttweb_blocked = False
 
     in_tw_hours = is_tw_market_hours()
-    tw_symbols = [p[0] for p in self.portfolio if p[0].endswith('.TW') or p[0].endswith('.TWO') or p[0] == 'WTX&']
+    tw_symbols = [p[0] for p in self.portfolio if p[0].endswith('.TW') or p[0].endswith('.TWO') or (p[0].startswith('W') and p[0].endswith('&')) or p[0] == 'WTX&']
     all_tw = (len(tw_symbols) == len(self.portfolio))
     if not in_tw_hours and self.cached_tw_rows and all_tw:
       return {
@@ -4241,7 +4241,9 @@ async function loadPortfolioSparklines() {
 
     const chartMap = {};
     for (const chunk of chunks) {
-      const res = await fetch(`/api/sparkline_multi?symbols=${chunk.join(',')}`);
+      const query = encodeURIComponent(chunk.join(','));
+      const res = await fetch(`/api/sparkline_multi?symbols=${query}`);
+      if (!res.ok) continue;
       const json = await res.json();
       const list = Array.isArray(json) ? json : (json.data || []);
       list.forEach(item => {
@@ -4433,9 +4435,11 @@ function _drawSparklineSVG(containerId, chartData) {
       }
     }
 
+    const singleDot = points.length === 1 ? `<circle cx="${getX(points[0].t).toFixed(1)}" cy="${getY(points[0].p).toFixed(1)}" r="2.5" fill="${color}" />` : '';
     container.innerHTML = `
       <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="width:100%; height:100%; background:transparent;">
         ${prevCloseLine}
+        ${singleDot}
         <polyline points="${svgPoints}"
               fill="none"
               stroke="${color}"
@@ -4755,6 +4759,7 @@ function getYahooToTradingViewUrl(symbol) {
     '^TWOII': 'TPEX:TPEX',      // 櫃買指數
     'FITX': 'TAIFEX:TX1!',      // 台指期 (使用 TX1! 代表連續月)
     'WTX&': 'TAIFEX:TX1!',     // 台指期 (portfolio 改用 WTX& symbol)
+    'WTF&': 'TAIFEX:TF1!',     // 金融期 (portfolio WTF& symbol)
     '^GSPC': 'SP:SPX',          // S&P 500
     '^NDX': 'TVC:NDX',          // Nasdaq 100
     '^IXIC': 'TVC:IXIC',        // Nasdaq Composite
@@ -4811,6 +4816,7 @@ function getCommunityLink(symbol) {
     '^TWOII': 'https://www.cmoney.tw/forum/stock/TWC00',      // 櫃買指數
     'FITX': 'https://www.cmoney.tw/forum/futures/TXF1?s=p',      // 台指期
     'WTX&': 'https://www.cmoney.tw/forum/futures/TXF1?s=p',     // 台指期 (portfolio 改用 WTX& symbol)
+    'WTF&': 'https://www.cmoney.tw/forum/futures/TFF1?s=p',     // 金融期 (portfolio WTF& symbol)
     '^GSPC': 'https://www.futunn.com/hk/index/.SPX-US/community',           // S&P 500
     '^IXIC': 'https://www.futunn.com/hk/index/.IXIC-US',        // Nasdaq Composite
     '^DJI': 'https://www.futunn.com/hk/index/.DJI-US',            // 道瓊
@@ -5249,6 +5255,7 @@ const CHART_URL_MAP = {
   '^TWOII': 'https://stock.wearn.com/finance_chart.asp?stockid=IDXOT&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1',
   'FITX': 'https://stock.wearn.com/finance_chart.asp?stockid=WTX&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1', // 台指期
   'WTX&': 'https://stock.wearn.com/finance_chart.asp?stockid=WTX&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1', // 台指期 (portfolio 改用 WTX& symbol)
+  'WTF&': 'https://stock.wearn.com/finance_chart.asp?stockid=WTF&timekind=0&timeblock=270&sma1=10&sma2=20&sma3=60&volume=1', // 金融期 (portfolio WTF& symbol)
 
   // === 美股期貨 (維持原本 Intraday 5分K) ===
   'ES=F': 'https://charts2-node.finviz.com/chart.ashx?cs=m&t=@es&tf=i5&s=linear&pm=0&am=0&ct=candle_stick&tm=d', // S&P 500 Futures
@@ -5547,7 +5554,7 @@ function pfFmtUsDollar(v) {
 function openPfStockModal(rawSymbol, stockName, cardPrice, cardChange) {
   if (!rawSymbol) return;
   var symStr = String(rawSymbol).trim();
-  var isTW = symStr.indexOf('.TW') !== -1 || /^[0-9]/.test(symStr);
+  var isTW = symStr.indexOf('.TW') !== -1 || symStr.indexOf('.TWO') !== -1 || /^[0-9]/.test(symStr) || (symStr.startsWith('W') && symStr.endsWith('&'));
   var isUS = !isTW;
   var cleanId = symStr;
   if (isTW && cleanId.indexOf('.') > 0) {
@@ -6402,7 +6409,7 @@ def api_sparkline_multi():
   if not symbols_str:
     return jsonify({'error': 'No symbols'}), 400
   symbols = [s.strip() for s in symbols_str.split(',') if s.strip()]
-  symbols_json = _json.dumps(symbols)
+  symbols_json = quote(_json.dumps(symbols))
   url = f'https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;type=tick;symbols={symbols_json}'
   headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -6420,7 +6427,9 @@ def api_sparkline_multi():
 
 @app.route("/api/sparkline/<path:symbol>")
 def api_sparkline(symbol):
-  url = f'https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;type=tick;symbols=["{symbol}"]'
+  import json as _json
+  symbols_json = quote(_json.dumps([symbol]))
+  url = f'https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;type=tick;symbols={symbols_json}'
   headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Referer': 'https://tw.stock.yahoo.com/',
