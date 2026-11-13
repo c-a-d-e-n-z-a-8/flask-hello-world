@@ -2529,6 +2529,9 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
 # ==========================================
 # PART 2: Yahoo Notify Logic
 # ==========================================
+SPIKE_ALERT_RE = re.compile(r'<span class="(?:up|down)">[▲▼]急[拉殺][^<]*</span>\s*')
+
+
 class StockMonitor:
   def __init__(self):
     print("[DEBUG] Initializing StockMonitor...")
@@ -3183,7 +3186,19 @@ class StockMonitor:
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [DEBUG] Starting Monitor run_check (Count: {self.run_count})")
     if not self.initialized:
       self.init_portfolio()
-      
+
+    # 非台股交易時段：先回傳快取，避免後續 MA 重算 / PTT 爬蟲等網路請求
+    in_tw_hours = is_tw_market_hours()
+    # 台股現貨 + 加權/櫃買指數；台指期 (WTX& 等) 有夜盤，不算在內，含期貨時不進入收盤快取
+    tw_symbols = [p[0] for p in self.portfolio if p[0].endswith('.TW') or p[0].endswith('.TWO') or p[0] in ('^TWII', '^TWOII')]
+    all_tw = (len(tw_symbols) == len(self.portfolio))
+    if not in_tw_hours and self.cached_tw_rows and all_tw:
+      return {
+        "timestamp": f"{self.cached_tw_timestamp} (收盤)",
+        "rows": self.cached_tw_rows,
+        "news": self.news_cache
+      }
+
     # ==========================================
     # [新增] 每 30 次迴圈，更新一次所有股票的 MA
     # ==========================================
@@ -3212,16 +3227,6 @@ class StockMonitor:
       self._ptt_scrape_blocked = False
       self._pttweb_blocked = False
 
-    in_tw_hours = is_tw_market_hours()
-    tw_symbols = [p[0] for p in self.portfolio if p[0].endswith('.TW') or p[0].endswith('.TWO') or (p[0].startswith('W') and p[0].endswith('&')) or p[0] == 'WTX&']
-    all_tw = (len(tw_symbols) == len(self.portfolio))
-    if not in_tw_hours and self.cached_tw_rows and all_tw:
-      return {
-        "timestamp": f"{self.cached_tw_timestamp} (收盤)",
-        "rows": self.cached_tw_rows,
-        "news": self.news_cache
-      }
-    
     chunk_len = 20
     for c in range(0, len(self.portfolio), chunk_len):
       chunk = self.portfolio[c:c+chunk_len]
@@ -3367,7 +3372,14 @@ class StockMonitor:
       print(f"[DEBUG] Total News Found: {len(self.news_cache)}")
     
     cur_time_str = datetime.now(ZoneInfo('Asia/Taipei')).strftime('%H:%M:%S')
-    self.cached_tw_rows = rows
+    # 收盤快取：移除急拉/急殺並將 delta 歸零 (收盤後已無「相對上次輪詢」的變動)，避免前端整晚重複觸發警報音效
+    self.cached_tw_rows = [
+      {**r,
+       "alert": SPIKE_ALERT_RE.sub('', r["alert"]).strip().removeprefix('<br>'),
+       "delta": 0,
+       "delta_val": 0}
+      for r in rows
+    ]
     self.cached_tw_timestamp = cur_time_str
     self.run_count += 1
     # === 修改結束 ===
@@ -6609,7 +6621,7 @@ def get_taiex_sentiment(session=None):
         tse_list.sort(key=lambda x: x[1], reverse=True)
         elec_pct = next((x[1] for x in tse_list if x[0] == '電子'), 0.0)
         if elec_pct >= 70.0:
-          elec_status = f"🔥 電子吸金攻擊盤 ({elec_pct:.1f}%)"
+          elec_status = f"🔥 電子吸金攻擊盤 ({elec_pct:.1f}%)"  
         elif elec_pct <= 55.0 and elec_pct > 0:
           elec_status = f"⚠️ 電子資金外溢 ({elec_pct:.1f}%)"
         else:
