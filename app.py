@@ -2589,6 +2589,7 @@ class StockMonitor:
     self.cached_tw_rows = []
     self.cached_tw_timestamp = ""
     self.micro_cache = {}
+    self.quant_ref = {}
 
   def ma_calculation(self, ticker):
     # print(f"[DEBUG] Calculating MA for {ticker[0]}...") # Optional trace
@@ -2607,7 +2608,8 @@ class StockMonitor:
       r = self.session.get(url, headers=self.headers, timeout=10)
       if r.status_code == 200:
         data = r.json()
-        close = data["chart"]["result"][0]["indicators"]["adjclose"][0]["adjclose"]
+        res0 = data["chart"]["result"][0]
+        close = res0["indicators"]["adjclose"][0]["adjclose"]
         if None in close: return [None]*9
         
         precision = 4 if close[-1] < 1 else 2
@@ -2621,6 +2623,50 @@ class StockMonitor:
         ma20_1 = safe_avg(close[-21:-1])
         ma60_1 = safe_avg(close[-61:-1])
         ma200_1 = safe_avg(close[-201:-1])
+
+        # 順便從同一個 chart JSON 提取最近 30 筆 OHLC 計算輕量化微觀結構靜態參考位 (零額外網路 I/O)
+        try:
+          q_ind = (res0["indicators"].get("quote") or [{}])[0]
+          h_raw = q_ind.get("high") or []
+          l_raw = q_ind.get("low") or []
+          c_raw = q_ind.get("close") or []
+          bars = [
+            (float(h), float(l), float(c))
+            for h, l, c in zip(h_raw[-30:], l_raw[-30:], c_raw[-30:])
+            if h is not None and l is not None and c is not None
+          ]
+          def _build_snap(b):
+            if len(b) < 21:
+              return None
+            prev_h, prev_l, prev_c = b[-1]
+            trs = [
+              max(b[k][0] - b[k][1], abs(b[k][0] - b[k - 1][2]), abs(b[k][1] - b[k - 1][2]))
+              for k in range(-20, 0)
+            ]
+            atr20 = sum(trs) / 20.0
+            rng_prev = prev_h - prev_l
+            min_rng_7 = min(x[0] - x[1] for x in b[-7:])
+            was_nr7 = (rng_prev <= min_rng_7) and (atr20 > 0 and (rng_prev / atr20) < 0.65)
+            was_ib = (prev_h < b[-2][0]) and (prev_l > b[-2][1])
+            nr7_h = (b[-2][0] if was_ib else prev_h) if (was_nr7 or was_ib) else None
+            nr7_l = (b[-2][1] if was_ib else prev_l) if (was_nr7 or was_ib) else None
+            return {
+              "prev_h": prev_h,
+              "prev_l": prev_l,
+              "prev_c": prev_c,
+              "atr20": atr20,
+              "nr7_ref_h": nr7_h,
+              "nr7_ref_l": nr7_l,
+              "swing_low_20": min(x[1] for x in b[-20:]),
+              "swing_high_20": max(x[0] for x in b[-20:]),
+            }
+          if len(bars) >= 22:
+            self.quant_ref[ticker[0]] = {
+              "normal": _build_snap(bars[:-1]),
+              "preopen": _build_snap(bars),
+            }
+        except Exception:
+          pass
         
         return [None, ma10, ma20, ma60, ma200, ma10_1, ma20_1, ma60_1, ma200_1]
       else:
@@ -2955,7 +3001,7 @@ class StockMonitor:
 
 
 
-  def check_signals(self, p_idx, price, price_1):
+  def check_signals(self, p_idx, price, price_1, day_open=None, day_high=None, day_low=None):
     # (Logic unchanged, omitted for brevity)
     p = self.portfolio[p_idx]
 
@@ -3056,7 +3102,55 @@ class StockMonitor:
         msgs.append(styled_msg(f"MA20↘60({ma20},{ma60})"))
 
     # --------------------------
-    # 4. 回傳結果
+    # 4. 輕量化華爾街微觀結構檢查 (每 30 輪於 ma_calculation 更新靜態參考位，盤中 O(1) 比對)
+    # --------------------------
+    q_pair = getattr(self, "quant_ref", {}).get(symbol)
+    if q_pair:
+      q_norm = q_pair.get("normal")
+      q_pre = q_pair.get("preopen")
+      if q_norm and q_pre:
+        q = q_pre if abs(q_pre["prev_c"] - price_1) < abs(q_norm["prev_c"] - price_1) else q_norm
+      else:
+        q = q_norm or q_pre
+
+      if q:
+        o_now = day_open if day_open is not None else price
+        h_now = max(day_high if day_high is not None else price, price)
+        l_now = min(day_low if day_low is not None else price, price)
+        rng_now = h_now - l_now
+        clv_now = (price - l_now) / rng_now if rng_now > 1e-6 else 0.5
+        atr20 = q["atr20"]
+
+        # (1) [NR7-BRK] 昨日 NR7/孕線極度壓縮，今日突破/破底
+        if q["nr7_ref_h"] is not None and rng_now > 0:
+          if price > q["nr7_ref_h"] and clv_now >= 0.70:
+            msgs.append(styled_msg("↗NR7突破"))
+          elif price < q["nr7_ref_l"] and clv_now <= 0.30:
+            msgs.append(styled_msg("↘NR7破底"))
+
+        # (2) [SWEEP-2B] 20日區間流動性掃蕩 (破底翻 / 假突破)
+        if l_now < q["swing_low_20"] and price > q["swing_low_20"] and clv_now >= 0.65 and price > o_now:
+          msgs.append(styled_msg("↗2B破底翻"))
+        elif h_now > q["swing_high_20"] and price < q["swing_high_20"] and clv_now <= 0.35 and price < o_now:
+          msgs.append(styled_msg("↘2B假突破"))
+
+        # (3) [GAP-GO] 跳空不補強勢動能 (去除全日量能門檻以適應早盤)
+        if atr20 > 0:
+          if (o_now - q["prev_h"]) >= 0.3 * atr20 and l_now >= q["prev_h"] and price > o_now and clv_now >= 0.65:
+            msgs.append(styled_msg("↗跳空不補"))
+          elif (q["prev_l"] - o_now) >= 0.3 * atr20 and h_now <= q["prev_l"] and price < o_now and clv_now <= 0.35:
+            msgs.append(styled_msg("↘跳空破位"))
+
+        # (4) [ATR-Z] 極端波動率乖離耗竭
+        if ma20 is not None and atr20 > 0:
+          atr_z = (price - ma20) / atr20
+          if atr_z <= -2.5 and price >= o_now and clv_now >= 0.50:
+            msgs.append(styled_msg(f"↗超跌反彈(Z={atr_z:.1f})"))
+          elif atr_z >= 3.0 and price <= o_now and clv_now <= 0.50:
+            msgs.append(styled_msg(f"↘過熱鈍化(Z={atr_z:.1f})"))
+
+    # --------------------------
+    # 5. 回傳結果
     # --------------------------
     return " | ".join(msgs)
 
@@ -3253,6 +3347,9 @@ class StockMonitor:
             try:
               price = float(item['price']['raw'])
               price_1 = float(item.get('regularMarketPreviousClose', {}).get('raw', price))
+              day_open = float(item.get('regularMarketOpen', {}).get('raw', price))
+              day_high = float(item.get('regularMarketDayHigh', {}).get('raw', price))
+              day_low = float(item.get('regularMarketDayLow', {}).get('raw', price))
             except:
               continue
               
@@ -3308,7 +3405,7 @@ class StockMonitor:
 
                 # 2. 合併為字串 (移除隱藏邏輯，直接顯示)
                 display_alert = " ".join(alert_msgs)
-                additional_alert = self.check_signals(i, price, price_1)
+                additional_alert = self.check_signals(i, price, price_1, day_open, day_high, day_low)
                 
                 # 3. 組合最終 alert (微觀結構外盤/折溢價放前綴，<br> 分隔指標)
                 final_alert = ""
