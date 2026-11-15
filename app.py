@@ -6611,6 +6611,7 @@ def get_taiex_sentiment(session=None):
     h = float(data_tse.get('H', 0)) / 100.0
     l = float(data_tse.get('L', 0)) / 100.0
     clv = (p - l) / (h - l) if (h - l) > 0 else 0.5
+    day_range_pct = ((h - l) / pc) * 100.0 if pc > 0 and h >= l else 0.0
 
     up_cnt = int(data_tse.get('UpS', 0))
     down_cnt = int(data_tse.get('DownS', 0))
@@ -6630,12 +6631,13 @@ def get_taiex_sentiment(session=None):
     avg_ask = tas / tac if tac > 0 else 0.0
     large_order_ratio = (avg_bid / avg_ask) if avg_ask > 0 else 1.0
 
-    # 2. 台指期近月即時行情與基差 (TX,3)
+    # 2. 台指期近月即時行情與相對基差百分比 (TX,3)
     tx_p = 0.0
     tx_chg = 0.0
     tx_chg_pct = 0.0
     tx_vol = 0
     basis = 0.0
+    basis_pct = 0.0
     basis_status = "中性價差"
     try:
       url_tx = f"{mdj_url.rstrip('/')}/Z/js/SKV/TX,3/SKVgetv1.djxml?x=1&a=TX,3&b=0&c=0&d=0"
@@ -6651,12 +6653,13 @@ def get_taiex_sentiment(session=None):
           tx_vol = int(data_tx.get('V', 0))
           if tx_p > 0 and p > 0:
             basis = round(tx_p - p, 2)
-            if basis >= 30:
-              basis_status = f"大額正價差 (+{basis:.1f}點) 軋空推升"
-            elif basis <= -40:
-              basis_status = f"深度逆價差 ({basis:.1f}點) 避險貼水"
+            basis_pct = round((basis / p) * 100.0, 3)
+            if basis_pct >= 0.25:
+              basis_status = f"大額正價差 (+{basis:.1f}點 / +{basis_pct:.2f}%) 軋空推升"
+            elif basis_pct <= -0.30:
+              basis_status = f"深度逆價差 ({basis:.1f}點 / {basis_pct:.2f}%) 避險貼水"
             else:
-              basis_status = f"{basis:+.1f}點"
+              basis_status = f"{basis:+.1f}點 ({basis_pct:+.2f}%)"
     except Exception:
       pass
 
@@ -6669,6 +6672,7 @@ def get_taiex_sentiment(session=None):
     otc_upl = 0
     otc_downl = 0
     otc_ad = 1.0
+    data_otc = None
     try:
       url_otc = f"{mdj_url.rstrip('/')}/Z/js/SKV/OTC,1/SKVgetv1.djxml?x=1&a=OTC,1&b=0&c=0&d=0"
       resp_otc = req_sess.get(url_otc, timeout=3)
@@ -6736,35 +6740,43 @@ def get_taiex_sentiment(session=None):
     total_ad = round(total_up / total_down, 2) if total_down > 0 else 99.0
     total_up_ratio = round(total_up / (total_up + total_down) * 100.0, 1) if (total_up + total_down) else 50.0
 
-    # 6. 即時背離與動能訊號
+    # 6. 即時背離與動能訊號 (含濾噪緩衝區 Deadband 與台股微觀大單邏輯)
     divergence_flags = []
-    if chg > 0 and up_cnt < down_cnt:
-      divergence_flags.append("⚠️ 【拉積盤/指跌背離】加權上漲但下跌家數過半，主力拉權值掩護中小型股出貨！")
-    elif chg < 0 and up_cnt > down_cnt:
-      divergence_flags.append("💎 【壓盤洗籌/指漲背離】加權微跌但上漲家數居多，市場體質強韌，主力暗中吃貨！")
+    if chg_pct >= 0.30 and (total_up_ratio < 42.0 or total_ad <= 0.75):
+      divergence_flags.append(f"⚠️ 【拉積盤/指跌背離】加權上漲 {chg_pct:+.2f}% 但全市場上漲僅 {total_up_ratio:.1f}% (AD={total_ad:.2f})，主力拉權值掩護中小型股出貨！")
+    elif chg_pct <= -0.20 and (total_up_ratio >= 55.0 or total_ad >= 1.20 or otc_chg_pct >= 0.25):
+      divergence_flags.append(f"💎 【壓盤洗籌/指漲背離】加權下跌 {chg_pct:+.2f}% 但全市場上漲達 {total_up_ratio:.1f}% (AD={total_ad:.2f})，市場體質強韌，主力暗中吃貨！")
 
-    if chg > 0 and otc_chg < 0 and otc_up < otc_down:
-      divergence_flags.append("⚠️ 【拉大出小/中小型失血】加權上漲但櫃買下跌且家數普跌，主力護權值掩護中小型提款！")
-    elif otc_chg_pct > (chg_pct + 0.5) and otc_upl >= 15:
-      divergence_flags.append(f"🚀 【內資狂熱/中小型衝刺】櫃買動能顯著強於大盤，中小型漲停達 {otc_upl} 檔，內資主力積極主導！")
+    if chg_pct >= 0.25 and otc_chg_pct <= -0.30 and otc_ad <= 0.75:
+      divergence_flags.append(f"⚠️ 【拉大出小/中小型失血】加權漲 {chg_pct:+.2f}% 但櫃買跌 {otc_chg_pct:+.2f}% (OTC AD={otc_ad:.2f})，資金抽離中小型股！")
+    elif otc_chg_pct > (chg_pct + 0.50) and otc_upl >= 15:
+      divergence_flags.append(f"🚀 【內資狂熱/中小型衝刺】櫃買動能 ({otc_chg_pct:+.2f}%) 顯著強於大盤，上櫃漲停達 {otc_upl} 檔，內資主力積極主導！")
 
-    if basis >= 30:
-      divergence_flags.append(f"🔴 【期現大額正價差】台指期大幅溢價 +{basis:.1f} 點，期貨大戶極度偏多軋空！")
-    elif basis <= -40:
-      divergence_flags.append(f"🟢 【期現深度逆價差】台指期逆價差達 {basis:.1f} 點，期貨避險偏空賣壓沉重！")
+    if basis_pct >= 0.25:
+      divergence_flags.append(f"🔴 【期現大額正價差】台指期大幅溢價 +{basis:.1f} 點 ({basis_pct:+.2f}%)，期貨大戶極度偏多軋空！")
+    elif basis_pct <= -0.30:
+      divergence_flags.append(f"🟢 【期現深度逆價差】台指期逆價差達 {basis:.1f} 點 ({basis_pct:+.2f}%)，期貨避險賣壓或除息貼水沉重！")
 
-    if elec_pct <= 55.0 and elec_pct > 0:
-      divergence_flags.append(f"⚠️ 【電子資金外溢】電子成交比重降至 {elec_pct:.1f}% (<55%)，資金轉向非電族群，電子易盤整！")
+    if chg_pct <= -0.20 and large_order_ratio >= 1.30:
+      divergence_flags.append(f"💎 【大戶逆勢掛大單低接】指數回檔但主力大單比高達 {large_order_ratio:.2f} (均買 {avg_bid:.1f}張 vs 均賣 {avg_ask:.1f}張)，下檔大戶承接強勁！")
+    elif chg_pct >= 0.30 and large_order_ratio <= 0.75:
+      divergence_flags.append(f"⚠️ 【大戶逢高拆單出貨】指數上漲但主力大單比降至 {large_order_ratio:.2f} (均買 {avg_bid:.1f}張 vs 均賣 {avg_ask:.1f}張)，提防大戶倒貨散戶追高！")
 
-    if chg_pct > 1.0 and clv < 0.35:
-      divergence_flags.append("🚨 【高檔引爆獲利賣壓】早盤大漲但尾盤收近當日最低，留長上影線！")
-    elif chg_pct < -1.0 and clv > 0.65:
-      divergence_flags.append("🔴 【低檔強力承接反彈】早盤重挫但尾盤強拉收高，下影線長！")
+    if 0 < elec_pct <= 55.0:
+      sec_hint = f" ({top_sectors_str})" if top_sectors_str else ""
+      divergence_flags.append(f"⚠️ 【電子資金外溢】電子成交比重降至 {elec_pct:.1f}% (<55%)，資金轉向非電族群{sec_hint}，電子易盤整！")
 
-    # 7. 情緒評分模型
+    if chg_pct > 0.80 and day_range_pct >= 0.80 and clv < 0.35:
+      divergence_flags.append(f"🚨 【高檔引爆獲利賣壓】日內振幅達 {day_range_pct:.2f}% 且收近當日最低 (CLV={clv:.2f})，留長上影線！")
+    elif chg_pct < -0.80 and day_range_pct >= 0.80 and clv > 0.65:
+      divergence_flags.append(f"🔴 【低檔強力承接反彈】日內振幅達 {day_range_pct:.2f}% 且急拉收近當日最高 (CLV={clv:.2f})，留長下影線！")
+
+    # 7. 情緒評分模型 (綜合全市場寬度 40%、漲跌停投機度 25%、大單+委買賣訂單流 20%、日內收盤位置 CLV 15%)
     score_breadth = min(max(total_up_ratio, 0.0), 100.0)
-    score_speculation = min(max(50.0 + (total_upl - total_downl) * 2.0, 0.0), 100.0)
-    score_orderflow = min(max(50.0 + (ba_ratio - 1.0) * 100.0, 0.0), 100.0)
+    score_speculation = min(max(50.0 + (total_upl - total_downl) * 1.5, 0.0), 100.0)
+    score_orderflow_ba = min(max(50.0 + (ba_ratio - 1.0) * 100.0, 0.0), 100.0)
+    score_orderflow_lo = min(max(50.0 + (large_order_ratio - 1.0) * 80.0, 0.0), 100.0)
+    score_orderflow = score_orderflow_lo * 0.60 + score_orderflow_ba * 0.40
     score_clv = clv * 100.0
 
     sentiment_score = round(
@@ -6832,6 +6844,7 @@ def get_taiex_sentiment(session=None):
         'change_pct': round(tx_chg_pct, 2),
         'volume': tx_vol,
         'basis': basis,
+        'basis_pct': basis_pct,
         'basis_status': basis_status,
       },
       'otc': {
