@@ -2833,7 +2833,10 @@ class StockMonitor:
           if not title:
             continue
 
-          link = f'https://www.ptt.cc{href}.html' if not href.endswith('.html') else f'https://www.ptt.cc{href}'
+          clean_href = href.removesuffix('.html')
+          if not clean_href.startswith('/bbs/'):
+            clean_href = f"/bbs/{clean_href.lstrip('/')}"
+          link = f'https://www.pttweb.cc{clean_href}'
           r_el = row.select_one('div.e7-recommendScore')
           nrec = ''.join(r_el.stripped_strings) if r_el else '0'
           u_el = row.select_one('div.e7-meta-container a')
