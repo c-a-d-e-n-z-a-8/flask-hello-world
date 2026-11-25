@@ -2531,6 +2531,49 @@ def build_heatmap_data(df: pd.DataFrame, type_filter: str, area_metric: str):
 # ==========================================
 SPIKE_ALERT_RE = re.compile(r'<span class="(?:up|down)">[▲▼]急[拉殺][^<]*</span>\s*')
 
+_SIGNAL_ETF_LEV_SET = {
+  '00631L.TW', '00632R.TW', '00675L.TW', '00670L.TW', '00663L.TW', '00664R.TW',
+  'QLD', 'TQQQ', 'SQQQ', 'SOXL', 'SOXS', 'UPRO', 'SPXL', 'SPXS', 'TMF', 'TMV',
+  'FNGU', 'FNGG', 'FNGD', 'NVDL', 'TSLL', 'TNA', 'TZA', 'LABU', 'YINN', 'UDOW', 'SDOW', 'SDS', 'SSO',
+}
+_SIGNAL_ETF_UNLEV_SET = {
+  'VOO', 'SPY', 'IVV', 'VTI', 'QQQ', 'QQQM', 'DIA', 'IWM', 'SMH', 'SOXX', 'SPMO',
+  'GLD', 'SLV', 'TLT', 'IEF', 'SHY', 'HYG', 'LQD', 'USL', 'USO',
+  'XLF', 'XLK', 'XLE', 'XLV', 'XLI', 'XLP', 'XLY', 'XLU', 'XLC', 'XLB', 'XLRE',
+  'DRAM', 'ARKK', 'ARKG', 'IGV', 'GNOM', 'MCHI', 'KWEB', 'REZ', 'ITB', 'FLIN',
+  'VGK', 'VNM', 'EWY', 'EWJ', 'EWT', 'EEM', 'FXI', 'NLR', 'CIBR', 'SCHD', 'JEPI', 'VIG', 'VYM', 'GDX', 'VNQ',
+  'TWA02', 'DX-Y.NYB', '000300.SS',
+}
+
+
+def _classify_signal_asset(ticker, description=''):
+  """依代號與名稱將標的分類為 index_etf_lev、index_etf、tw_stock、us_stock 或 crypto，供訊號自適應分流使用。"""
+  t = str(ticker or '').strip().upper()
+  desc = str(description or '').upper()
+  if not t:
+    return 'us_stock'
+  if '-USD' in t:
+    return 'crypto'
+  if t in _SIGNAL_ETF_LEV_SET:
+    return 'index_etf_lev'
+  if t.startswith('^') or t in _SIGNAL_ETF_UNLEV_SET or '=X' in t or '=F' in t:
+    return 'index_etf'
+  if ('.TW' in t) or ('.TWO' in t):
+    base = t.split('.', 1)[0]
+    if base.startswith('00'):
+      if base.endswith('L') or base.endswith('R') or ('正2' in desc) or ('反1' in desc):
+        return 'index_etf_lev'
+      return 'index_etf'
+    return 'tw_stock'
+  if any(k in desc for k in ('2X', '3X', 'ULTRA', 'BULL 2X', 'BULL 3X')):
+    if 'ETF' in desc or 'INDEX' in desc or 'PROSHARES' in desc:
+      return 'index_etf_lev'
+  if 'ETF' in desc or 'INDEX FUND' in desc:
+    return 'index_etf'
+  return 'us_stock'
+
+
+
 
 class StockMonitor:
   def __init__(self):
@@ -2649,16 +2692,12 @@ class StockMonitor:
             was_nr7 = (rng_prev <= min_rng_7) and (atr20 > 0 and (rng_prev / atr20) < 0.65)
             was_ib = (prev_h < b[-2][0]) and (prev_l > b[-2][1])
             nr7_h = (b[-2][0] if was_ib else prev_h) if (was_nr7 or was_ib) else None
-            nr7_l = (b[-2][1] if was_ib else prev_l) if (was_nr7 or was_ib) else None
             return {
               "prev_h": prev_h,
               "prev_l": prev_l,
               "prev_c": prev_c,
               "atr20": atr20,
               "nr7_ref_h": nr7_h,
-              "nr7_ref_l": nr7_l,
-              "swing_low_20": min(x[1] for x in b[-20:]),
-              "swing_high_20": max(x[0] for x in b[-20:]),
             }
           if len(bars) >= 22:
             self.quant_ref[ticker[0]] = {
@@ -3004,8 +3043,8 @@ class StockMonitor:
 
 
 
-  def check_signals(self, p_idx, price, price_1, day_open=None, day_high=None, day_low=None):
-    # (Logic unchanged, omitted for brevity)
+  def check_signals(self, p_idx, price, price_1, day_open=None, day_high=None, day_low=None, symbol_name=''):
+    # 依 signal.md 4 類資產分流既有訊號並移除負 Alpha 雜訊 (不新增額外指標)
     p = self.portfolio[p_idx]
 
     # 取用欄位
@@ -3021,6 +3060,12 @@ class StockMonitor:
     price_high = p[2]
 
     symbol = p[0]
+    asset_cls = _classify_signal_asset(symbol, symbol_name)
+    is_tw_stock = (asset_cls == 'tw_stock')
+    is_us_stock = (asset_cls == 'us_stock')
+    is_unlev_etf = (asset_cls == 'index_etf')
+    is_lev_etf = (asset_cls == 'index_etf_lev')
+    is_individual_stock = is_tw_stock or is_us_stock
     msgs = []
 
     # 輔助函數:根據箭頭自動添加顏色 class
@@ -3056,11 +3101,7 @@ class StockMonitor:
       if (price > ma10) and (price_1 <= ma10_1):
         msgs.append(styled_msg(f"↗MA10({ma10})"))
       if (price < ma10) and (price_1 >= ma10_1):
-        text = f"↘MA10({ma10})"
-        if hasattr(self, "macd_w_is_fall"):
-          if symbol in self.macd_w_is_fall and self.macd_w_is_fall[symbol] is True:
-            text += " MACD-Fall"
-        msgs.append(styled_msg(text))
+        msgs.append(styled_msg(f"↘MA10({ma10})"))
 
     if ma20_1 is not None:
       if (price > ma20) and (price_1 <= ma20_1):
@@ -3074,13 +3115,13 @@ class StockMonitor:
     if ma60_1 is not None:
       if (price > ma60) and (price_1 <= ma60_1):
         msgs.append(styled_msg(f"↗MA60({ma60})"))
-      if (price < ma60) and (price_1 >= ma60_1):
+      if (not (is_unlev_etf or is_lev_etf)) and (price < ma60) and (price_1 >= ma60_1):
         msgs.append(styled_msg(f"↘MA60({ma60})"))
 
     if ma200_1 is not None:
-      if (price > ma200) and (price_1 <= ma200_1):
+      if (not is_unlev_etf) and (price > ma200) and (price_1 <= ma200_1):
         msgs.append(styled_msg(f"↗MA200({ma200})"))
-      if (price < ma200) and (price_1 >= ma200_1):
+      if (not is_lev_etf) and (price < ma200) and (price_1 >= ma200_1):
         msgs.append(styled_msg(f"↘MA200({ma200})"))
 
     # --------------------------
@@ -3124,33 +3165,23 @@ class StockMonitor:
         clv_now = (price - l_now) / rng_now if rng_now > 1e-6 else 0.5
         atr20 = q["atr20"]
 
-        # (1) [NR7-BRK] 昨日 NR7/孕線極度壓縮，今日突破/破底
-        if q["nr7_ref_h"] is not None and rng_now > 0:
+        # (1) [NR7-BRK] 昨日 NR7/孕線極度壓縮，今日向上突破 (限個股；破底已停用)
+        if is_individual_stock and q["nr7_ref_h"] is not None and rng_now > 0:
           if price > q["nr7_ref_h"] and clv_now >= 0.70:
             msgs.append(styled_msg("↗NR7突破"))
-          elif price < q["nr7_ref_l"] and clv_now <= 0.30:
-            msgs.append(styled_msg("↘NR7破底"))
 
-        # (2) [SWEEP-2B] 20日區間流動性掃蕩 (破底翻 / 假突破)
-        if l_now < q["swing_low_20"] and price > q["swing_low_20"] and clv_now >= 0.65 and price > o_now:
-          msgs.append(styled_msg("↗2B破底翻"))
-        elif h_now > q["swing_high_20"] and price < q["swing_high_20"] and clv_now <= 0.35 and price < o_now:
-          msgs.append(styled_msg("↘2B假突破"))
-
-        # (3) [GAP-GO] 跳空不補強勢動能 (去除全日量能門檻以適應早盤)
+        # (2) [GAP-GO] 跳空不補強勢動能 (向上限個股+原型ETF；向下限台股個股)
         if atr20 > 0:
-          if (o_now - q["prev_h"]) >= 0.3 * atr20 and l_now >= q["prev_h"] and price > o_now and clv_now >= 0.65:
+          if (is_individual_stock or is_unlev_etf) and (o_now - q["prev_h"]) >= 0.3 * atr20 and l_now >= q["prev_h"] and price > o_now and clv_now >= 0.65:
             msgs.append(styled_msg("↗跳空不補"))
-          elif (q["prev_l"] - o_now) >= 0.3 * atr20 and h_now <= q["prev_l"] and price < o_now and clv_now <= 0.35:
+          elif is_tw_stock and (q["prev_l"] - o_now) >= 0.3 * atr20 and h_now <= q["prev_l"] and price < o_now and clv_now <= 0.35:
             msgs.append(styled_msg("↘跳空破位"))
 
-        # (4) [ATR-Z] 極端波動率乖離耗竭
-        if ma20 is not None and atr20 > 0:
+        # (3) [ATR-Z] 極端波動率超跌反彈 (僅限美股個股與槓桿ETF；超買賣飛已停用)
+        if (is_us_stock or is_lev_etf) and ma20 is not None and atr20 > 0:
           atr_z = (price - ma20) / atr20
           if atr_z <= -2.5 and price >= o_now and clv_now >= 0.50:
             msgs.append(styled_msg(f"↗超跌反彈(Z={atr_z:.1f})"))
-          elif atr_z >= 3.0 and price <= o_now and clv_now <= 0.50:
-            msgs.append(styled_msg(f"↘過熱鈍化(Z={atr_z:.1f})"))
 
     # --------------------------
     # 5. 回傳結果
@@ -3408,7 +3439,7 @@ class StockMonitor:
 
                 # 2. 合併為字串 (移除隱藏邏輯，直接顯示)
                 display_alert = " ".join(alert_msgs)
-                additional_alert = self.check_signals(i, price, price_1, day_open, day_high, day_low)
+                additional_alert = self.check_signals(i, price, price_1, day_open, day_high, day_low, symbol_name=item.get('symbolName', ''))
                 
                 # 3. 組合最終 alert (微觀結構外盤/折溢價放前綴，<br> 分隔指標)
                 final_alert = ""
