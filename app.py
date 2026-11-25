@@ -4182,7 +4182,7 @@ HTML_TEMPLATE = """
       <iframe data-src="https://tswe-ai.com/" loading="lazy"></iframe>
     </div>
     <div id="iframe-ptt" class="iframe-view">
-      <iframe data-src="https://www.pttweb.cc/bbs/Stock/" loading="lazy"></iframe>
+      <iframe data-src="https://www.ptt.cc/bbs/Stock/index.html" loading="lazy"></iframe>
     </div>
     <div id="iframe-buzzing" class="iframe-view">
       <iframe data-src="https://www.buzzing.cc/" loading="lazy"></iframe>
